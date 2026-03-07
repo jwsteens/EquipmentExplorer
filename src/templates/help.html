@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Help - Equipment Explorer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1>How to Use</h1>
+    </div>
+    <p class="page-subtitle">Quick guide to the Equipment Explorer</p>
+</div>
+
+<div class="help-container" style="max-width: 900px;">
+    
+    <!-- Search Section -->
+    <div class="card" style="margin-bottom: var(--space-lg);">
+        <div class="card-header">
+            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;color:var(--accent-primary)">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="m21 21-4.35-4.35"/>
+                </svg>
+                Search
+            </h3>
+        </div>
+        <div class="card-body">
+            <p style="margin-bottom: var(--space-md);">Find cables, equipment, and documents by searching for their tag numbers or filenames.</p>
+            
+            <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Search Types:</h4>
+            <ul style="margin-left: var(--space-lg); margin-bottom: var(--space-md); line-height: 1.8;">
+                <li><strong>All Tags</strong> - Search for cables and equipment by exact tag number or description</li>
+                <li><strong>Cables</strong> - Filter results to only show cables</li>
+                <li><strong>Equipment</strong> - Filter results to only show equipment</li>
+                <li><strong>Documents</strong> - Search for a PDF by filename, supplier or supplier code to see all tags it contains</li>
+            </ul>
+            
+            <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Tips:</h4>
+            <ul style="margin-left: var(--space-lg); margin-bottom: var(--space-md); line-height: 1.8;">
+                <li>Enable <strong>Partial match</strong> to find tags containing your search term</li>
+                <li>Click on any tag in results to search for it</li>
+                <li>Use the <strong>Contents</strong> button on PDF results to see all tags in that document</li>
+				<li>Pin the cable, equipment or PDF to the sidebar to easily find it later</li>
+            </ul>
+        </div>
+    </div>
+    
+    <!-- Cable List Section -->
+    <div class="card" style="margin-bottom: var(--space-lg);">
+        <div class="card-header">
+            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;color:var(--accent-cable)">
+                    <path d="M4 9h16"/>
+                    <path d="M4 15h16"/>
+                    <circle cx="8" cy="9" r="1" fill="currentColor"/>
+                    <circle cx="16" cy="15" r="1" fill="currentColor"/>
+                </svg>
+                Cable List
+            </h3>
+        </div>
+        <div class="card-body">
+            <p style="margin-bottom: var(--space-md);">Browse all cables with their connection information.</p>
+            
+            <ul style="margin-left: var(--space-lg); line-height: 1.8;">
+                <li>View start and destination equipment for each cable</li>
+                <li>See compartment locations and deck information</li>
+                <li>Click any cable or equipment tag to search for it</li>
+                <li>Use the search box to filter the table</li>
+                <li>Export to CSV for use in Excel</li>
+				<li>Pin the cable to the sidebar</li>
+            </ul>
+        </div>
+    </div>
+    
+    <!-- Documents Section -->
+    <div class="card" style="margin-bottom: var(--space-lg);">
+        <div class="card-header">
+            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;color:var(--accent-secondary)">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14,2 14,8 20,8"/>
+                </svg>
+                Documents
+            </h3>
+        </div>
+        <div class="card-body">
+            <p style="margin-bottom: var(--space-md);">Browse all drawings and documents.</p>
+            
+            <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Status Indicators:</h4>
+            <ul style="margin-left: var(--space-lg); margin-bottom: var(--space-md); line-height: 1.8;">
+                <li><span class="badge badge-success">Indexed</span> - Document has been processed and tags can be searched</li>
+                <li><span class="badge badge-warning">OCR Done</span> - OCR processing complete</li>
+                <li><span class="badge badge-muted">Needs OCR</span> - Document needs OCR processing</li>
+                <li><span class="badge badge-muted">Not Indexed</span> - Document not yet in the index</li>
+            </ul>
+            
+            <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Actions:</h4>
+            <ul style="margin-left: var(--space-lg); line-height: 1.8;">
+                <li><strong>Open</strong> - Opens the PDF in a new tab</li>
+                <li><strong>Contents</strong> - Shows all cables and equipment found in the document</li>
+                <li><strong>Tags count</strong> - Click to see a popup with all tags in the document</li>
+				<li><strong>Pin</strong> - Pin the PDF to the sidebar</li>
+            </ul>
+        </div>
+    </div>
+    
+    <!-- Keyboard Shortcuts Section -->
+    <div class="card" style="margin-bottom: var(--space-lg);">
+        <div class="card-header">
+            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;color:var(--text-secondary)">
+                    <rect x="2" y="4" width="20" height="16" rx="2"/>
+                    <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M18 12h.01M8 16h8"/>
+                </svg>
+                Keyboard Shortcuts
+            </h3>
+        </div>
+        <div class="card-body">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-md);">
+                <div>
+                    <div class="shortcut-row" style="display: flex; justify-content: space-between; padding: var(--space-xs) 0;">
+                        <span>Focus search</span>
+                        <kbd class="kbd">/</kbd>
+                    </div>
+                    <div class="shortcut-row" style="display: flex; justify-content: space-between; padding: var(--space-xs) 0;">
+                        <span>Clear / Close</span>
+                        <kbd class="kbd">Esc</kbd>
+                    </div>
+                    <div class="shortcut-row" style="display: flex; justify-content: space-between; padding: var(--space-xs) 0;">
+                        <span>Toggle theme</span>
+                        <kbd class="kbd">T</kbd>
+                    </div>
+                    <div class="shortcut-row" style="display: flex; justify-content: space-between; padding: var(--space-xs) 0;">
+                        <span>Toggle pinned sidebar</span>
+                        <kbd class="kbd">P</kbd>
+                    </div>
+                </div>
+                <div>
+                    <div class="shortcut-row" style="display: flex; justify-content: space-between; padding: var(--space-xs) 0;">
+                        <span>Go to Dashboard</span>
+                        <span><kbd class="kbd">G</kbd> <kbd class="kbd">H</kbd></span>
+                    </div>
+                    <div class="shortcut-row" style="display: flex; justify-content: space-between; padding: var(--space-xs) 0;">
+                        <span>Go to Search</span>
+                        <span><kbd class="kbd">G</kbd> <kbd class="kbd">S</kbd></span>
+                    </div>
+                    <div class="shortcut-row" style="display: flex; justify-content: space-between; padding: var(--space-xs) 0;">
+                        <span>Go to Cables</span>
+                        <span><kbd class="kbd">G</kbd> <kbd class="kbd">C</kbd></span>
+                    </div>
+                    <div class="shortcut-row" style="display: flex; justify-content: space-between; padding: var(--space-xs) 0;">
+                        <span>Go to Documents</span>
+                        <span><kbd class="kbd">G</kbd> <kbd class="kbd">D</kbd></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Offline Mode Section -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;color:var(--accent-warning)">
+                    <path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.58 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>
+                </svg>
+                Offline Mode
+            </h3>
+        </div>
+        <div class="card-body">
+            <p style="margin-bottom: var(--space-md);">The application caches data locally for offline use.</p>
+            
+            <ul style="margin-left: var(--space-lg); line-height: 1.8;">
+                <li>Cable and document lists are cached in your browser</li>
+                <li>Data automatically syncs when you're back online</li>
+                <li>Use the <strong>Refresh</strong> button to manually update cached data</li>
+                <li>The cache indicator shows when you're using cached data</li>
+            </ul>
+        </div>
+    </div>
+    
+</div>
+{% endblock %}

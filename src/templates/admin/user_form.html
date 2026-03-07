@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit User' if mode == 'edit' else 'Create User' }} - Equipment Explorer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1>{{ 'Edit User' if mode == 'edit' else 'Create User' }}</h1>
+    </div>
+    <p class="page-subtitle">{{ 'Modify user account settings' if mode == 'edit' else 'Add a new user account' }}</p>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div style="margin-bottom: var(--space-lg);">
+            {% for category, message in messages %}
+                <div style="padding: var(--space-md); border-radius: var(--radius-md); margin-bottom: var(--space-sm); background: {% if category == 'error' %}rgba(239, 68, 68, 0.1){% elif category == 'success' %}rgba(0, 212, 170, 0.1){% else %}rgba(14, 165, 233, 0.1){% endif %}; border: 1px solid {% if category == 'error' %}var(--accent-danger){% elif category == 'success' %}var(--accent-primary){% else %}var(--accent-secondary){% endif %}; color: {% if category == 'error' %}var(--accent-danger){% elif category == 'success' %}var(--accent-primary){% else %}var(--accent-secondary){% endif %};">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<div class="card" style="max-width: 600px;">
+    <div class="card-body">
+        <form method="POST">
+            <div class="form-group" style="margin-bottom: var(--space-lg);">
+                <label for="username" style="display: block; margin-bottom: var(--space-xs); color: var(--text-secondary); font-size: 0.875rem; font-weight: 500;">Username *</label>
+                <input type="text" id="username" name="username" required
+                       value="{{ user.username if user else '' }}"
+                       style="width: 100%; padding: var(--space-sm) var(--space-md); background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary);">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: var(--space-lg);">
+                <label for="email" style="display: block; margin-bottom: var(--space-xs); color: var(--text-secondary); font-size: 0.875rem; font-weight: 500;">Email</label>
+                <input type="email" id="email" name="email"
+                       value="{{ user.email if user else '' }}"
+                       style="width: 100%; padding: var(--space-sm) var(--space-md); background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary);">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: var(--space-lg);">
+                <label for="role" style="display: block; margin-bottom: var(--space-xs); color: var(--text-secondary); font-size: 0.875rem; font-weight: 500;">Role *</label>
+                <select id="role" name="role" required
+                        style="width: 100%; padding: var(--space-sm) var(--space-md); background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary);">
+                    <option value="viewer" {% if user and user.role == 'viewer' %}selected{% endif %}>Viewer - Read only access</option>
+                    <option value="editor" {% if user and user.role == 'editor' %}selected{% endif %}>Editor - Can add/edit data</option>
+                    <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin - Full access</option>
+                </select>
+            </div>
+            
+            {% if mode == 'edit' %}
+            <div class="form-group" style="margin-bottom: var(--space-lg);">
+                <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer;">
+                    <input type="checkbox" name="is_active" value="1" {% if user.is_active %}checked{% endif %}
+                           style="width: 18px; height: 18px; accent-color: var(--accent-primary);">
+                    <span style="color: var(--text-secondary);">Account is active</span>
+                </label>
+            </div>
+            {% endif %}
+            
+            <div class="form-group" style="margin-bottom: var(--space-lg);">
+                <label for="password" style="display: block; margin-bottom: var(--space-xs); color: var(--text-secondary); font-size: 0.875rem; font-weight: 500;">
+                    {{ 'New Password' if mode == 'edit' else 'Password *' }}
+                </label>
+                <input type="password" id="password" name="{{ 'new_password' if mode == 'edit' else 'password' }}"
+                       {% if mode == 'create' %}required{% endif %} minlength="6"
+                       style="width: 100%; padding: var(--space-sm) var(--space-md); background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary);">
+                <small class="text-muted">
+                    {% if mode == 'edit' %}
+                        Leave blank to keep current password. Minimum 6 characters.
+                    {% else %}
+                        Minimum 6 characters.
+                    {% endif %}
+                </small>
+            </div>
+            
+            <div style="display: flex; gap: var(--space-md);">
+                <button type="submit" class="btn btn-primary">
+                    {{ 'Save Changes' if mode == 'edit' else 'Create User' }}
+                </button>
+                <a href="{{ url_for('admin.users') }}" class="btn btn-ghost">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

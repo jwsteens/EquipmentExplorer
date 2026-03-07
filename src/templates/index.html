@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Ship Cable Database{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1>Dashboard</h1>
+    </div>
+    <p class="page-subtitle">Ship Cable and Equipment Database Overview</p>
+</div>
+
+<!-- Stats Grid -->
+<div class="stat-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-md); margin-bottom: var(--space-xl);">
+    <div class="stat-card">
+        <div class="stat-icon cables">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 9h16"/>
+                <path d="M4 15h16"/>
+                <circle cx="8" cy="9" r="1" fill="currentColor"/>
+                <circle cx="16" cy="15" r="1" fill="currentColor"/>
+            </svg>
+        </div>
+        <div class="stat-content">
+            <div class="stat-value">{{ "{:,}".format(stats.total_cables) }}</div>
+            <div class="stat-label">Cables</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon equipment">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+                <circle cx="12" cy="12" r="4"/>
+                <line x1="12" y1="1" x2="12" y2="4"/>
+                <line x1="12" y1="20" x2="12" y2="23"/>
+            </svg>
+        </div>
+        <div class="stat-content">
+            <div class="stat-value">{{ "{:,}".format(stats.total_equipment) }}</div>
+            <div class="stat-label">Equipment</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon documents">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14,2 14,8 20,8"/>
+            </svg>
+        </div>
+        <div class="stat-content">
+            <div class="stat-value">{{ "{:,}".format(stats.total_pdfs) }}</div>
+            <div class="stat-label">Indexed Documents</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon tags">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+        </div>
+        <div class="stat-content">
+            <div class="stat-value">{{ "{:,}".format(stats.total_occurrences) }}</div>
+            <div class="stat-label">Tag Occurrences</div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Search -->
+<div class="card" style="margin-bottom: var(--space-xl);">
+    <div class="card-header">
+        <h3 class="card-title">Quick Search</h3>
+    </div>
+    <div class="card-body">
+        <form action="/search" method="GET" id="quickSearchForm">
+            <div class="search-input-wrapper">
+                <span class="search-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                </span>
+                <input type="text" 
+                       name="q" 
+                       class="search-input" 
+                       placeholder="Search cables, equipment, or drawings..."
+                       autocomplete="off"
+                       id="quickSearchInput">
+                <span class="search-shortcut">
+                    Press <kbd class="kbd">/</kbd> to focus
+                </span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-lg);">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Database Info</h3>
+        </div>
+        <div class="card-body">
+            <table style="width: 100%;">
+                <tr>
+                    <td style="padding: var(--space-sm) 0; color: var(--text-secondary);">Searchable PDFs</td>
+                    <td style="padding: var(--space-sm) 0; text-align: right; font-family: var(--font-mono);">{{ "{:,}".format(stats.searchable_pdfs) }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: var(--space-sm) 0; color: var(--text-secondary);">Tags with occurrences</td>
+                    <td style="padding: var(--space-sm) 0; text-align: right; font-family: var(--font-mono);">{{ "{:,}".format(stats.tags_with_occurrences) }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: var(--space-sm) 0; color: var(--text-secondary);">Cable connections</td>
+                    <td style="padding: var(--space-sm) 0; text-align: right; font-family: var(--font-mono);">{{ "{:,}".format(stats.cable_connections) }}</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Quick Actions</h3>
+        </div>
+        <div class="card-body">
+            <div style="display: flex; flex-direction: column; gap: var(--space-sm);">
+                <a href="/search" class="btn btn-secondary" style="justify-content: flex-start;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                    Advanced Search
+                </a>
+                <a href="/cables" class="btn btn-secondary" style="justify-content: flex-start;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                        <path d="M4 9h16"/>
+                        <path d="M4 15h16"/>
+                    </svg>
+                    Browse Cables
+                </a>
+                <a href="/documents" class="btn btn-secondary" style="justify-content: flex-start;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14,2 14,8 20,8"/>
+                    </svg>
+                    Browse Documents
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Searches (stored in localStorage) -->
+<div class="card" style="margin-top: var(--space-xl);" id="recentSearchesCard">
+    <div class="card-header">
+        <h3 class="card-title">Recent Searches</h3>
+        <button class="btn btn-ghost btn-sm" onclick="clearRecentSearches()">Clear</button>
+    </div>
+    <div class="card-body" id="recentSearchesList">
+        <p class="text-muted">No recent searches</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Quick search form
+    const form = document.getElementById('quickSearchForm');
+    const input = document.getElementById('quickSearchInput');
+    
+    form.addEventListener('submit', function(e) {
+        const query = input.value.trim();
+        if (query) {
+            // Add to recent searches
+            addRecentSearch(query);
+        }
+    });
+    
+    // Load recent searches
+    loadRecentSearches();
+});
+
+function loadRecentSearches() {
+    const container = document.getElementById('recentSearchesList');
+    const recent = JSON.parse(localStorage.getItem('recentSearches') || '[]');
+    
+    if (recent.length === 0) {
+        container.innerHTML = '<p class="text-muted">No recent searches</p>';
+        return;
+    }
+    
+    const html = recent.map(item => `
+        <a href="/search?q=${encodeURIComponent(item.query)}" 
+           class="btn btn-ghost btn-sm" 
+           style="margin-right: var(--space-xs); margin-bottom: var(--space-xs);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+                <polyline points="1 4 1 10 7 10"/>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+            ${escapeHtml(item.query)}
+        </a>
+    `).join('');
+    
+    container.innerHTML = html;
+}
+
+function addRecentSearch(query) {
+    let recent = JSON.parse(localStorage.getItem('recentSearches') || '[]');
+    
+    // Remove if already exists
+    recent = recent.filter(item => item.query !== query);
+    
+    // Add to front
+    recent.unshift({ query: query, timestamp: Date.now() });
+    
+    // Keep only last 10
+    recent = recent.slice(0, 10);
+    
+    localStorage.setItem('recentSearches', JSON.stringify(recent));
+}
+
+function clearRecentSearches() {
+    localStorage.removeItem('recentSearches');
+    loadRecentSearches();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

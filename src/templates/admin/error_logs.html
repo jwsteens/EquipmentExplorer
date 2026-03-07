@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Error Logs - Equipment Explorer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1>Error Logs</h1>
+    </div>
+    <p class="page-subtitle">Application errors and exceptions ({{ total }} total entries)</p>
+</div>
+
+<div style="margin-bottom: var(--space-lg); display: flex; gap: var(--space-md); flex-wrap: wrap; align-items: center;">
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-ghost">Back to Admin</a>
+    
+    {% if error_types %}
+    <div style="display: flex; gap: var(--space-sm); align-items: center;">
+        <span class="text-muted">Filter:</span>
+        <a href="{{ url_for('admin.error_logs') }}" class="btn btn-sm {% if not current_type %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+        {% for type in error_types %}
+            <a href="{{ url_for('admin.error_logs', type=type) }}" 
+               class="btn btn-sm {% if current_type == type %}btn-primary{% else %}btn-secondary{% endif %}">
+                {{ type }}
+            </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="card-body" style="overflow-x: auto;">
+        <table class="display" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Type</th>
+                    <th>Message</th>
+                    <th>Endpoint</th>
+                    <th>IP</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td style="white-space: nowrap; font-size: 0.85rem; color: var(--text-muted);">
+                        {{ log.timestamp[:19] if log.timestamp else '-' }}
+                    </td>
+                    <td>
+                        <span class="badge badge-warning" style="font-family: var(--font-mono); font-size: 0.75rem;">
+                            {{ log.error_type }}
+                        </span>
+                    </td>
+                    <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        {{ log.error_message }}
+                    </td>
+                    <td style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted);">
+                        {{ log.endpoint or '-' }}
+                    </td>
+                    <td style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted);">
+                        {{ log.ip_address or '-' }}
+                    </td>
+                    <td>
+                        <button class="btn btn-ghost btn-sm" onclick="showErrorDetail({{ log.log_id }})" title="View details">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not logs %}
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: var(--space-xl); color: var(--text-muted);">
+                        No error logs {% if current_type %}for type "{{ current_type }}"{% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div style="display: flex; justify-content: center; gap: var(--space-sm); margin-top: var(--space-lg);">
+    {% if page > 1 %}
+        <a href="{{ url_for('admin.error_logs', page=page-1, type=current_type) }}" class="btn btn-secondary btn-sm">← Previous</a>
+    {% endif %}
+    
+    <span style="display: flex; align-items: center; padding: 0 var(--space-md); color: var(--text-muted);">
+        Page {{ page }} of {{ total_pages }}
+    </span>
+    
+    {% if page < total_pages %}
+        <a href="{{ url_for('admin.error_logs', page=page+1, type=current_type) }}" class="btn btn-secondary btn-sm">Next →</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Error Detail Modal -->
+<div class="shortcuts-modal" id="errorModal">
+    <div class="shortcuts-content" style="max-width: 800px;">
+        <div class="shortcuts-header">
+            <h3>Error Details</h3>
+            <button class="shortcuts-close" onclick="hideErrorModal()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div id="errorDetailContent" style="padding: var(--space-lg);">
+            <p class="text-muted">Loading...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function showErrorDetail(logId) {
+    const modal = document.getElementById('errorModal');
+    const content = document.getElementById('errorDetailContent');
+    
+    modal.classList.add('show');
+    content.innerHTML = '<p class="text-muted">Loading...</p>';
+    
+    try {
+        const response = await fetch(`/admin/api/logs/errors/${logId}`);
+        const log = await response.json();
+        
+        if (log.error) {
+            content.innerHTML = `<p class="text-muted">${log.error}</p>`;
+            return;
+        }
+        
+        content.innerHTML = `
+            <div style="display: grid; gap: var(--space-md);">
+                <div>
+                    <strong class="text-secondary">Type:</strong>
+                    <span class="badge badge-warning" style="margin-left: var(--space-sm);">${escapeHtml(log.error_type)}</span>
+                </div>
+                <div>
+                    <strong class="text-secondary">Timestamp:</strong>
+                    <span style="margin-left: var(--space-sm);">${log.timestamp || '-'}</span>
+                </div>
+                <div>
+                    <strong class="text-secondary">Endpoint:</strong>
+                    <code style="margin-left: var(--space-sm);">${escapeHtml(log.endpoint) || '-'}</code>
+                </div>
+                <div>
+                    <strong class="text-secondary">IP Address:</strong>
+                    <code style="margin-left: var(--space-sm);">${escapeHtml(log.ip_address) || '-'}</code>
+                </div>
+                <div>
+                    <strong class="text-secondary">Message:</strong>
+                    <div style="margin-top: var(--space-xs); padding: var(--space-md); background: var(--bg-tertiary); border-radius: var(--radius-md); color: var(--accent-danger);">
+                        ${escapeHtml(log.error_message)}
+                    </div>
+                </div>
+                ${log.stack_trace ? `
+                <div>
+                    <strong class="text-secondary">Stack Trace:</strong>
+                    <pre style="margin-top: var(--space-xs); padding: var(--space-md); background: var(--bg-tertiary); border-radius: var(--radius-md); overflow-x: auto; font-size: 0.75rem; color: var(--text-muted); max-height: 300px;">${escapeHtml(log.stack_trace)}</pre>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    } catch (error) {
+        content.innerHTML = `<p style="color: var(--accent-danger);">Error loading details: ${error.message}</p>`;
+    }
+}
+
+function hideErrorModal() {
+    document.getElementById('errorModal').classList.remove('show');
+}
+
+// Close on outside click
+document.getElementById('errorModal').addEventListener('click', function(e) {
+    if (e.target === this) hideErrorModal();
+});
+
+// Close on escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') hideErrorModal();
+});
+</script>
+{% endblock %}

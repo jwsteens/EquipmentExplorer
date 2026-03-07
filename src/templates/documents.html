@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+
+{% block title %}Documents - Equipment Explorer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1>Documents</h1>
+        <span class="cache-status" id="cacheStatus"></span>
+    </div>
+    <p class="page-subtitle">All drawings and documents (indexed and non-indexed)</p>
+</div>
+
+<div class="card card-table">
+    <div class="card-body">
+        <table id="documentsTable" class="display" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>Filename</th>
+                    <th>Description</th>
+                    <th>Category</th>
+                    <th>Supplier Code</th>
+                    <th>Supplier Name</th>
+                    <th>Pages</th>
+                    <th>Tags</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Document Tags Modal -->
+<div class="shortcuts-modal" id="tagsModal">
+    <div class="shortcuts-content" style="max-width: 700px;">
+        <div class="shortcuts-header">
+            <h3 id="tagsModalTitle">Document Tags</h3>
+            <button class="shortcuts-close" onclick="closeTagsModal()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div id="tagsModalContent">
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p>Loading tags...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// =============================================================================
+// IndexedDB Cache Manager
+// =============================================================================
+const DB_NAME = 'ShipCableDB';
+const DB_VERSION = 2;
+
+class CacheManager {
+    constructor() {
+        this.db = null;
+    }
+    
+    async open() {
+        if (this.db) return this.db;
+        
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve(this.db);
+            };
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                
+                if (!db.objectStoreNames.contains('cables')) {
+                    db.createObjectStore('cables', { autoIncrement: true });
+                }
+                if (!db.objectStoreNames.contains('documents')) {
+                    db.createObjectStore('documents', { autoIncrement: true });
+                }
+                if (!db.objectStoreNames.contains('metadata')) {
+                    db.createObjectStore('metadata', { keyPath: 'key' });
+                }
+            };
+        });
+    }
+    
+    async getDocuments() {
+        const db = await this.open();
+        
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['metadata'], 'readonly');
+            const metaStore = tx.objectStore('metadata');
+            
+            const metaRequest = metaStore.get('documents_meta');
+            
+            metaRequest.onsuccess = () => {
+                const meta = metaRequest.result;
+                if (!meta || !meta.data) {
+                    resolve(null);
+                    return;
+                }
+                
+                resolve({
+                    version: meta.version,
+                    timestamp: meta.timestamp,
+                    data: meta.data
+                });
+            };
+            metaRequest.onerror = () => resolve(null);
+        });
+    }
+    
+    async setDocuments(version, data) {
+        const db = await this.open();
+        
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['metadata'], 'readwrite');
+            const metaStore = tx.objectStore('metadata');
+            
+            metaStore.put({
+                key: 'documents_meta',
+                version: version,
+                timestamp: Date.now(),
+                data: data
+            });
+            
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+}
+
+const cache = new CacheManager();
+
+// =============================================================================
+// Data Loading
+// =============================================================================
+
+function updateCacheStatus(status, type = 'info') {
+    const el = document.getElementById('cacheStatus');
+    const icons = {
+        'info': '⏳',
+        'success': '✓',
+        'cached': '📦',
+        'warning': '⚠️',
+        'offline': '📴'
+    };
+    const colors = {
+        'info': 'var(--text-muted)',
+        'success': 'var(--accent-primary)',
+        'cached': 'var(--accent-secondary)',
+        'warning': 'var(--accent-warning)',
+        'offline': 'var(--accent-warning)'
+    };
+    el.innerHTML = `<span style="font-size: 0.8rem; color: ${colors[type]}; margin-left: var(--space-md);">${icons[type]} ${status}</span>`;
+}
+
+async function loadDocumentsData() {
+    let serverVersion = null;
+    
+    // Step 1: Try cache first
+    const cached = await cache.getDocuments();
+    
+    if (cached && cached.data && cached.data.length > 0) {
+        const cacheAge = Math.round((Date.now() - cached.timestamp) / 1000 / 60);
+        updateCacheStatus(`Loaded from cache (${cacheAge}m ago)`, 'cached');
+        
+        initializeTable(cached.data);
+        
+        // Background version check
+        try {
+            const versionResp = await fetch('/api/data-version');
+            const versionData = await versionResp.json();
+            serverVersion = versionData.version;
+            
+            if (serverVersion !== cached.version) {
+                updateCacheStatus('Updating cache...', 'info');
+                await refreshFromServer(serverVersion);
+            } else {
+                updateCacheStatus('Cache up-to-date', 'success');
+            }
+        } catch (e) {
+            updateCacheStatus('Offline - using cache', 'offline');
+        }
+        
+        return;
+    }
+    
+    // Step 2: No cache - fetch from server
+    updateCacheStatus('Loading from server...', 'info');
+    
+    try {
+        const versionResp = await fetch('/api/data-version');
+        const versionData = await versionResp.json();
+        serverVersion = versionData.version;
+        
+        const response = await fetch('/api/documents');
+        const result = await response.json();
+        
+        await cache.setDocuments(serverVersion, result.data);
+        updateCacheStatus(`Loaded & cached (${result.data.length} docs)`, 'success');
+        
+        initializeTable(result.data);
+        
+    } catch (e) {
+        console.error('Failed to load documents:', e);
+        updateCacheStatus('Failed to load data', 'warning');
+        initializeTable([]);
+    }
+}
+
+async function refreshFromServer(serverVersion) {
+    try {
+        const response = await fetch('/api/documents');
+        const result = await response.json();
+        
+        await cache.setDocuments(serverVersion, result.data);
+        
+        const table = $('#documentsTable').DataTable();
+        table.clear();
+        table.rows.add(result.data);
+        table.draw();
+        
+        updateCacheStatus('Cache updated', 'success');
+    } catch (e) {
+        console.error('Background refresh failed:', e);
+        updateCacheStatus('Update failed - using cache', 'warning');
+    }
+}
+
+// =============================================================================
+// DataTable
+// =============================================================================
+
+let tableInitialized = false;
+
+function initializeTable(data) {
+    if (tableInitialized) return;
+    tableInitialized = true;
+    
+    $('#documentsTable').DataTable({
+        data: data,
+        deferRender: true,
+        
+        columns: [
+            { 
+                data: 'filename',
+                render: function(data, type, row) {
+                    if (type === 'display') {
+                        return `<span class="mono" style="font-size: 0.85rem;">${escapeHtml(data)}</span>`;
+                    }
+                    return data;
+                }
+            },
+            { 
+                data: 'document_description',
+                render: function(data) {
+                    if (!data) return '<span class="text-muted">-</span>';
+                    const truncated = data.length > 60 ? data.substring(0, 60) + '...' : data;
+                    return `<span title="${escapeHtml(data)}">${escapeHtml(truncated)}</span>`;
+                }
+            },
+            { 
+                data: 'category',
+                render: function(data, type, row) {
+                    if (!data) return '-';
+                    const sub = row.subcategory;
+                    if (type === 'display') {
+                        return `<span class="text-muted" style="font-size: 0.8rem;" title="${escapeHtml(sub || '')}">${escapeHtml(data)}</span>`;
+                    }
+                    return data + ' ' + (sub || '');
+                }
+            },
+            { 
+                data: 'supplier_code',
+                render: function(data) {
+                    return data ? `<span class="mono" style="font-size: 0.8rem;">${escapeHtml(data)}</span>` : '-';
+                }
+            },
+            { 
+                data: 'supplier_name',
+                render: function(data) {
+                    if (!data) return '<span class="text-muted">-</span>';
+                    const truncated = data.length > 30 ? data.substring(0, 30) + '...' : data;
+                    return `<span title="${escapeHtml(data)}" style="font-size: 0.85rem;">${escapeHtml(truncated)}</span>`;
+                }
+            },
+            { 
+                data: 'page_count',
+                render: function(data) {
+                    return data ? `<span class="mono" style="font-size: 0.85rem;">${data}</span>` : '<span class="text-muted">-</span>';
+                }
+            },
+            { 
+                data: 'tag_count',
+                render: function(data, type, row) {
+                    if (type === 'display') {
+                        if (row.pdf_id && data > 0) {
+                            return `<button class="btn btn-ghost btn-sm" onclick="showTags(${row.pdf_id}, '${escapeHtml(row.filename)}')" style="font-family: var(--font-mono);">${data}</button>`;
+                        }
+                        return '<span class="text-muted">0</span>';
+                    }
+                    return data || 0;
+                }
+            },
+            { 
+                data: null,
+                render: function(data, type, row) {
+                    if (type !== 'display') {
+                        if (row.indexed === false) return 'not indexed';
+                        if (row.is_searchable) return 'indexed';
+                        if (row.ocr_processed) return 'ocr done';
+                        return 'needs ocr';
+                    }
+                    
+                    if (row.indexed === false) {
+                        return '<span class="badge badge-muted">Not Indexed</span>';
+                    }
+                    if (row.is_searchable) {
+                        return '<span class="badge badge-success">Indexed</span>';
+                    }
+                    if (row.ocr_processed) {
+                        return '<span class="badge badge-warning">OCR Done</span>';
+                    }
+                    return '<span class="badge badge-muted">Needs OCR</span>';
+                }
+            },
+            { 
+                data: null,
+                orderable: false,
+                render: function(data, type, row) {
+                    const title = row.document_description || row.filename;
+                    const pinned = isPinned(row.filename);
+                    
+                    let buttons = `
+                        <div style="display: flex; gap: 4px;">
+                            <a href="/pdf/${encodeURIComponent(row.relative_path)}" 
+                               target="_blank" 
+                               class="btn btn-secondary btn-sm"
+                               title="Open PDF">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                    <polyline points="15,3 21,3 21,9"/>
+                                    <line x1="10" y1="14" x2="21" y2="3"/>
+                                </svg>
+                            </a>
+                    `;
+                    
+                    // Add Contents button only for indexed PDFs
+                    if (row.pdf_id && row.is_searchable) {
+                        buttons += `
+                            <a href="/search?q=${encodeURIComponent(row.filename)}&type=pdf" 
+                               class="btn btn-ghost btn-sm"
+                               title="View contents">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <line x1="16" y1="13" x2="8" y2="13"/>
+                                    <line x1="16" y1="17" x2="8" y2="17"/>
+                                </svg>
+                            </a>
+                        `;
+                    }
+                    
+                    // Pin button
+                    buttons += `
+                        <button class="pin-btn ${pinned ? 'pinned' : ''}" 
+                                data-filename="${escapeHtml(row.filename)}"
+                                onclick="togglePinDocument('${escapeHtml(row.filename)}', '${escapeHtml(title)}', '${escapeHtml(row.relative_path)}')"
+                                title="${pinned ? 'Unpin document' : 'Pin document'}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+                                <path d="M9 4v6l-2 4v2h10v-2l-2-4V4"/>
+                                <line x1="12" y1="16" x2="12" y2="21"/>
+                                <line x1="8" y1="4" x2="16" y2="4"/>
+                            </svg>
+                        </button>
+                    `;
+                    
+                    buttons += `</div>`;
+                    return buttons;
+                }
+            }
+        ],
+        
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+        order: [[0, 'asc']],
+        
+        dom: '<"flex justify-between items-center mb-md"<"flex items-center gap-md"lf>B>rtip',
+        buttons: [
+            {
+                extend: 'csv',
+                text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV',
+                className: 'btn btn-secondary btn-sm',
+                filename: 'document_list'
+            },
+            {
+                text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:4px"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>Refresh',
+                className: 'btn btn-ghost btn-sm',
+                action: async function(e, dt, node, config) {
+                    updateCacheStatus('Refreshing...', 'info');
+                    try {
+                        const versionResp = await fetch('/api/data-version');
+                        const versionData = await versionResp.json();
+                        await refreshFromServer(versionData.version);
+                    } catch(e) {
+                        updateCacheStatus('Refresh failed', 'warning');
+                    }
+                }
+            }
+        ],
+        
+        language: {
+            search: "",
+            searchPlaceholder: "Search documents...",
+            info: "Showing _START_ to _END_ of _TOTAL_ documents",
+            infoEmpty: "No documents found",
+            infoFiltered: "(filtered from _MAX_ total)",
+            lengthMenu: "Show _MENU_",
+            paginate: {
+                first: "First",
+                last: "Last",
+                next: "Next",
+                previous: "Prev"
+            }
+        },
+        
+        initComplete: function() {
+            $('.dataTables_filter input').addClass('search-input').css({
+                'width': '300px',
+                'padding': 'var(--space-sm) var(--space-md)'
+            });
+        }
+    });
+}
+
+// =============================================================================
+// Tags Modal
+// =============================================================================
+
+async function showTags(pdfId, filename) {
+    const modal = document.getElementById('tagsModal');
+    const title = document.getElementById('tagsModalTitle');
+    const content = document.getElementById('tagsModalContent');
+    
+    title.textContent = `Tags in ${filename}`;
+    content.innerHTML = `
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <p>Loading tags...</p>
+        </div>
+    `;
+    
+    modal.classList.add('show');
+    
+    try {
+        const response = await fetch(`/api/pdf/${pdfId}/tags`);
+        const data = await response.json();
+        
+        if (data.tags && data.tags.length > 0) {
+            const cables = data.tags.filter(t => t.tag_type === 'cable');
+            const equipment = data.tags.filter(t => t.tag_type === 'equipment');
+            
+            let html = '';
+            
+            if (cables.length > 0) {
+                html += `
+                    <div style="margin-bottom: var(--space-lg);">
+                        <h4 style="color: var(--accent-cable); margin-bottom: var(--space-sm);">
+                            Cables (${cables.length})
+                        </h4>
+                        <div style="display: flex; flex-wrap: wrap; gap: var(--space-xs);">
+                            ${cables.map(t => `
+                                <a href="/search?q=${encodeURIComponent(t.tag_name)}" 
+                                   class="btn btn-ghost btn-sm" 
+                                   style="font-family: var(--font-mono); font-size: 0.8rem;">
+                                    ${escapeHtml(t.tag_name)}
+                                    ${t.page_number ? `<span class="text-muted">(p.${t.page_number})</span>` : ''}
+                                </a>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (equipment.length > 0) {
+                html += `
+                    <div>
+                        <h4 style="color: var(--accent-equipment); margin-bottom: var(--space-sm);">
+                            Equipment (${equipment.length})
+                        </h4>
+                        <div style="display: flex; flex-wrap: wrap; gap: var(--space-xs);">
+                            ${equipment.map(t => `
+                                <a href="/search?q=${encodeURIComponent(t.tag_name)}" 
+                                   class="btn btn-ghost btn-sm" 
+                                   style="font-family: var(--font-mono); font-size: 0.8rem;">
+                                    ${escapeHtml(t.tag_name)}
+                                    ${t.page_number ? `<span class="text-muted">(p.${t.page_number})</span>` : ''}
+                                </a>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            content.innerHTML = html;
+        } else {
+            content.innerHTML = '<p class="text-muted">No tags found in this document.</p>';
+        }
+    } catch (error) {
+        content.innerHTML = `<p class="text-muted">Error loading tags: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+function closeTagsModal() {
+    document.getElementById('tagsModal').classList.remove('show');
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeTagsModal();
+    }
+});
+
+document.getElementById('tagsModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeTagsModal();
+    }
+});
+
+// =============================================================================
+// Initialize
+// =============================================================================
+
+$(document).ready(function() {
+    loadDocumentsData();
+});
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

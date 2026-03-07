@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Database Management - Equipment Explorer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1>Database Management</h1>
+    </div>
+    <p class="page-subtitle">Configure database settings and paths</p>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div style="margin-bottom: var(--space-lg);">
+            {% for category, message in messages %}
+                <div style="padding: var(--space-md); border-radius: var(--radius-md); margin-bottom: var(--space-sm); background: {% if category == 'error' %}rgba(239, 68, 68, 0.1){% elif category == 'success' %}rgba(0, 212, 170, 0.1){% else %}rgba(14, 165, 233, 0.1){% endif %}; border: 1px solid {% if category == 'error' %}var(--accent-danger){% elif category == 'success' %}var(--accent-primary){% else %}var(--accent-secondary){% endif %}; color: {% if category == 'error' %}var(--accent-danger){% elif category == 'success' %}var(--accent-primary){% else %}var(--accent-secondary){% endif %};">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<div style="margin-bottom: var(--space-lg);">
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-ghost">Back to Admin</a>
+</div>
+
+<!-- Database Statistics -->
+<div class="card" style="margin-bottom: var(--space-lg);">
+    <div class="card-header">
+        <h3 class="card-title">Database Statistics</h3>
+    </div>
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-lg);">
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem;">Cables</div>
+                <div style="font-size: 1.5rem; font-weight: 600; color: var(--accent-cable);">{{ stats.cables }}</div>
+            </div>
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem;">Equipment</div>
+                <div style="font-size: 1.5rem; font-weight: 600; color: var(--accent-equipment);">{{ stats.equipment }}</div>
+            </div>
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem;">Indexed PDFs</div>
+                <div style="font-size: 1.5rem; font-weight: 600; color: var(--accent-primary);">{{ stats.indexed_pdfs }}</div>
+            </div>
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem;">Total PDFs</div>
+                <div style="font-size: 1.5rem; font-weight: 600; color: var(--text-secondary);">{{ stats.total_pdfs }}</div>
+            </div>
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem;">Tag Occurrences</div>
+                <div style="font-size: 1.5rem; font-weight: 600; color: var(--text-secondary);">{{ stats.occurrences }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Path Settings -->
+<div class="card" style="margin-bottom: var(--space-lg);">
+    <div class="card-header">
+        <h3 class="card-title">Path Settings</h3>
+    </div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('admin.update_db_settings') }}">
+            <div class="form-group" style="margin-bottom: var(--space-lg);">
+                <label for="pdf_root" style="display: block; margin-bottom: var(--space-xs); color: var(--text-secondary); font-size: 0.875rem; font-weight: 500;">
+                    PDF Root Directory
+                </label>
+                <input type="text" id="pdf_root" name="pdf_root"
+                       value="{{ pdf_root }}"
+                       placeholder="/path/to/pdf/files"
+                       style="width: 100%; padding: var(--space-sm) var(--space-md); background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary); font-family: var(--font-mono);">
+                <small class="text-muted">Root directory containing PDF files for viewing</small>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: var(--space-lg);">
+                <label for="metadata_path" style="display: block; margin-bottom: var(--space-xs); color: var(--text-secondary); font-size: 0.875rem; font-weight: 500;">
+                    Metadata File Path
+                </label>
+                <input type="text" id="metadata_path" name="metadata_path"
+                       value="{{ metadata_path }}"
+                       placeholder="drawing_metadata.pkl"
+                       style="width: 100%; padding: var(--space-sm) var(--space-md); background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary); font-family: var(--font-mono);">
+                <small class="text-muted">Path to the drawing metadata pickle file</small>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+        </form>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Data Management</h3>
+    </div>
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--space-lg);">
+            <div>
+                <h4 style="margin-bottom: var(--space-sm); color: var(--text-secondary);">Cables & Equipment</h4>
+                <p class="text-muted" style="font-size: 0.875rem; margin-bottom: var(--space-md);">
+                    Manually add cables and equipment to the database.
+                </p>
+                <div style="display: flex; gap: var(--space-sm);">
+                    <a href="{{ url_for('admin.manage_cables') }}" class="btn btn-secondary btn-sm">Manage Cables</a>
+                    <a href="{{ url_for('admin.manage_equipment') }}" class="btn btn-secondary btn-sm">Manage Equipment</a>
+                </div>
+            </div>
+            
+            <div>
+                <h4 style="margin-bottom: var(--space-sm); color: var(--text-secondary);">PDF Indexing</h4>
+                <p class="text-muted" style="font-size: 0.875rem; margin-bottom: var(--space-md);">
+                    Run PDF indexing from the command line using index_pdfs.py
+                </p>
+                <code style="display: block; padding: var(--space-sm); background: var(--bg-tertiary); border-radius: var(--radius-sm); font-size: 0.8rem; color: var(--text-muted);">
+                    python index_pdfs.py --dir /path/to/pdfs
+                </code>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

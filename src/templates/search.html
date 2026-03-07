@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Search - Equipment Explorer{% endblock %}
+
+{% block content %}
+<div class="search-container">
+    <div class="search-hero">
+        <h1>Search</h1>
+        <p>Find cables, equipment, and documents</p>
+    </div>
+    
+    <div class="search-box">
+        <div class="search-input-wrapper">
+            <span class="search-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="m21 21-4.35-4.35"/>
+                </svg>
+            </span>
+            <input type="text" 
+                   id="searchInput" 
+                   class="search-input" 
+                   placeholder="Enter tag or document name..."
+                   autocomplete="off"
+                   autofocus>
+            <span class="search-shortcut">
+                <kbd class="kbd">/</kbd> to focus
+            </span>
+        </div>
+        <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
+    </div>
+    
+    <div class="search-filters">
+        <div class="filter-group">
+            <button class="filter-btn active" data-type="all">All Tags</button>
+            <button class="filter-btn" data-type="cable">Cables</button>
+            <button class="filter-btn" data-type="equipment">Equipment</button>
+            <button class="filter-btn" data-type="pdf">Documents</button>
+        </div>
+        <label style="display: flex; align-items: center; gap: var(--space-xs); color: var(--text-secondary); font-size: 0.875rem; cursor: pointer;">
+            <input type="checkbox" id="partialSearch" style="accent-color: var(--accent-primary);">
+            Partial match
+        </label>
+    </div>
+    
+    <div class="search-results" id="searchResults">
+        <div class="result-empty" id="emptyState">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+            </svg>
+            <p>Enter a tag or document name to search</p>
+            <p class="text-muted" style="font-size: 0.875rem;">
+                Examples: <a href="#" class="example-search">8511N00004</a>, 
+                <a href="#" class="example-search">8511IDK001</a>
+            </p>
+        </div>
+        <div class="loading hidden" id="loadingState">
+            <div class="loading-spinner"></div>
+            <p>Searching...</p>
+        </div>
+        <div id="resultsContent" class="hidden"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/search.js"></script>
+{% endblock %}

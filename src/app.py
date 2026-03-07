@@ -1,0 +1,1107 @@
+"""
+Equipment Explorer - Web Interface
+
+A Flask-based web application for searching cables, equipment, and drawings.
+"""
+
+import os
+import pickle
+import secrets
+import mimetypes
+import traceback
+from pathlib import Path
+from flask import Flask, render_template, jsonify, request, send_file, abort, session, redirect, url_for, flash, g
+from database import ShipCableDB
+from auth import AuthManager, login_required, admin_required, editor_required, SECRET_KEY
+from admin_routes import admin_bp
+
+from dotenv import load_dotenv
+load_dotenv()
+
+app = Flask(__name__)
+app.secret_key = SECRET_KEY
+
+# Configuration
+DB_PATH = os.environ.get('DB_PATH', 'ship_cables.db')
+PDF_ROOT = os.environ.get('PDF_ROOT', '')
+METADATA_PATH = os.environ.get('METADATA_PATH', 'drawing_metadata.pkl')
+COMPARTMENTS_PATH = os.environ.get('COMPARTMENTS_PATH', 'compartments.pkl')
+
+# Initialize database and auth
+db = None
+auth_manager = None
+drawing_metadata = {}
+compartments = {}
+
+
+def get_db():
+    """Get or create database connection."""
+    global db
+    if db is None:
+        db = ShipCableDB(DB_PATH)
+    return db
+
+
+def get_auth():
+    """Get or create auth manager."""
+    global auth_manager
+    if auth_manager is None:
+        auth_manager = AuthManager(get_db())
+    return auth_manager
+
+
+def load_metadata():
+    """Load drawing metadata from pickle file."""
+    global drawing_metadata
+    if os.path.exists(METADATA_PATH):
+        with open(METADATA_PATH, 'rb') as f:
+            drawing_metadata = pickle.load(f)
+    return drawing_metadata
+
+
+def load_compartments():
+    """Load compartment data from pickle file."""
+    global compartments
+    if os.path.exists(COMPARTMENTS_PATH):
+        with open(COMPARTMENTS_PATH, 'rb') as f:
+            compartments = pickle.load(f)
+    return compartments
+
+
+def get_compartment_description(room_tag):
+    """Get room description for a room tag."""
+    if not room_tag:
+        return None
+    # Try exact match first
+    if room_tag in compartments:
+        return compartments[room_tag]
+    # Try without leading zeros
+    room_key = str(room_tag).lstrip('0')
+    if room_key in compartments:
+        return compartments[room_key]
+    return None
+
+
+def enrich_with_compartment(data, room_field='room_tag'):
+    """Add compartment description to data dict."""
+    if isinstance(data, dict):
+        room_tag = data.get(room_field)
+        if room_tag:
+            desc = get_compartment_description(str(room_tag).split('.')[0] if room_tag else None)
+            data[f'{room_field}_description'] = desc
+    return data
+
+
+# Load data on startup
+with app.app_context():
+    load_metadata()
+    load_compartments()
+    print(f"Loaded {len(drawing_metadata)} drawing metadata entries")
+    print(f"Loaded {len(compartments)} compartment entries")
+
+
+# =============================================================================
+# AUTHENTICATION MIDDLEWARE & ROUTES
+# =============================================================================
+
+# Register admin blueprint
+app.register_blueprint(admin_bp)
+
+
+@app.before_request
+def load_user():
+    """Load user from session before each request."""
+    g.user = None
+    session_id = session.get('session_id')
+    if session_id:
+        auth = get_auth()
+        g.user = auth.validate_session(session_id)
+        if not g.user:
+            # Invalid session, clear it
+            session.pop('session_id', None)
+    
+    # Store db and auth in app config for blueprints
+    app.config['DB'] = get_db()
+    app.config['AUTH_MANAGER'] = get_auth()
+
+
+@app.context_processor
+def inject_user():
+    """Inject user into all templates."""
+    return {'current_user': g.get('user')}
+
+
+@app.after_request
+def add_cache_control(response):
+    """Add cache control headers to prevent caching of authenticated pages."""
+    # Don't cache HTML pages - they contain auth-dependent content
+    if response.content_type and 'text/html' in response.content_type:
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    # Don't cache API responses either
+    elif request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    return response
+
+
+@app.errorhandler(Exception)
+def handle_error(error):
+    """Log unhandled errors."""
+    auth = get_auth()
+    user_id = g.user['user_id'] if g.get('user') else None
+    
+    # Log the error
+    auth.log_error(
+        error_type=type(error).__name__,
+        error_message=str(error),
+        stack_trace=traceback.format_exc(),
+        endpoint=request.path,
+        user_id=user_id,
+        ip_address=request.remote_addr
+    )
+    
+    # Re-raise for default handling in debug mode
+    if app.debug:
+        raise error
+    
+    # Return generic error in production
+    return render_template('error.html', error=error), 500
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page."""
+    if g.get('user'):
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        auth = get_auth()
+        user = auth.authenticate(username, password)
+        
+        if user:
+            session_id = auth.create_session(
+                user['user_id'],
+                request.remote_addr,
+                request.user_agent.string
+            )
+            session['session_id'] = session_id
+            
+            # Set g.user for the current request so templates work immediately
+            g.user = user
+            
+            auth.log_access(user['user_id'], username, 'login', 
+                          f'Successful login',
+                          request.remote_addr, request.user_agent.string)
+            
+            flash(f'Welcome back, {username}!', 'success')
+            
+            next_url = request.args.get('next')
+            if next_url and next_url.startswith('/'):
+                return redirect(next_url)
+            return redirect(url_for('index'))
+        else:
+            auth.log_access(None, username, 'login_failed',
+                          f'Failed login attempt',
+                          request.remote_addr, request.user_agent.string)
+            flash('Invalid username or password.', 'error')
+    
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    """Logout and destroy session."""
+    session_id = session.get('session_id')
+    if session_id:
+        auth = get_auth()
+        if g.get('user'):
+            auth.log_access(g.user['user_id'], g.user['username'], 'logout',
+                          'User logged out',
+                          request.remote_addr, request.user_agent.string)
+        auth.destroy_session(session_id)
+    
+    session.clear()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
+
+
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    """User profile page for changing password."""
+    auth = get_auth()
+    
+    if request.method == 'POST':
+        current_password = request.form.get('current_password', '')
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+        
+        # Verify current password
+        user = auth.authenticate(g.user['username'], current_password)
+        if not user:
+            flash('Current password is incorrect.', 'error')
+            return render_template('profile.html')
+        
+        if len(new_password) < 6:
+            flash('New password must be at least 6 characters.', 'error')
+            return render_template('profile.html')
+        
+        if new_password != confirm_password:
+            flash('New passwords do not match.', 'error')
+            return render_template('profile.html')
+        
+        auth.change_password(g.user['user_id'], new_password)
+        auth.log_access(g.user['user_id'], g.user['username'], 'password_change',
+                      'User changed their password',
+                      request.remote_addr, request.user_agent.string)
+        flash('Password changed successfully.', 'success')
+    
+    return render_template('profile.html')
+
+
+# =============================================================================
+# ROUTES - Pages
+# =============================================================================
+
+@app.route('/')
+@login_required
+def index():
+    """Dashboard / Home page."""
+    db = get_db()
+    stats = db.get_stats()
+    return render_template('index.html', stats=stats)
+
+
+@app.route('/search')
+@login_required
+def search_page():
+    """Search interface page."""
+    return render_template('search.html')
+
+
+@app.route('/help')
+@login_required
+def help_page():
+    """Help / instructions page."""
+    return render_template('help.html')
+
+
+@app.route('/cables')
+@login_required
+def cables_page():
+    """Cable list page."""
+    return render_template('cables.html')
+
+
+@app.route('/documents')
+@login_required
+def documents_page():
+    """Documents/drawings list page."""
+    return render_template('documents.html')
+
+
+# =============================================================================
+# API ROUTES - Data
+# =============================================================================
+
+@app.route('/api/stats')
+@login_required
+def api_stats():
+    """Get database statistics."""
+    db = get_db()
+    stats = db.get_stats()
+    return jsonify(stats)
+
+
+@app.route('/api/search/tag/<tag_name>')
+@login_required
+def api_search_tag(tag_name):
+    """Search for a specific tag and return all PDFs where it appears."""
+    db = get_db()
+    
+    # Try exact match first, then uppercase
+    results = db.search_tag(tag_name)
+    search_tag = tag_name
+    if not results:
+        results = db.search_tag(tag_name.upper())
+        search_tag = tag_name.upper()
+    
+    # Even if no PDF results, try to find tag info from database
+    tag_info = None
+    if results:
+        tag_info = {
+            'tag_name': results[0]['tag_name'],
+            'tag_type': results[0]['tag_type'],
+            'description': results[0]['description']
+        }
+    else:
+        # Try to get tag info even without PDF occurrences
+        with db._get_connection() as conn:
+            cursor = conn.execute(
+                'SELECT tag_name, tag_type, description, room_tag, deck FROM tags WHERE tag_name = ? OR tag_name = ?',
+                (tag_name, tag_name.upper())
+            )
+            row = cursor.fetchone()
+            if row:
+                tag_info = {
+                    'tag_name': row['tag_name'],
+                    'tag_type': row['tag_type'],
+                    'description': row['description'],
+                    'room_tag': row['room_tag'],
+                    'deck': row['deck']
+                }
+                search_tag = row['tag_name']
+    
+    if not tag_info:
+        return jsonify({
+            'found': False,
+            'tag_name': tag_name,
+            'results': [],
+            'connection': None,
+            'connected_cables': [],
+            'equipment_location': None
+        })
+    
+    # Get connection info based on tag type
+    connection = None
+    connected_cables = []
+    equipment_location = None
+    
+    if tag_info['tag_type'] == 'cable':
+        connection = db.get_cable_connection(tag_info['tag_name'])
+        if connection:
+            # Enrich with compartment descriptions
+            connection['start_room_description'] = get_compartment_description(
+                str(connection.get('start_room', '')).split('.')[0] if connection.get('start_room') else None
+            )
+            connection['dest_room_description'] = get_compartment_description(
+                str(connection.get('dest_room', '')).split('.')[0] if connection.get('dest_room') else None
+            )
+    else:
+        # Get equipment location info
+        with db._get_connection() as conn:
+            cursor = conn.execute(
+                'SELECT room_tag, deck FROM tags WHERE tag_name = ?',
+                (tag_info['tag_name'],)
+            )
+            row = cursor.fetchone()
+            if row and (row['room_tag'] or row['deck']):
+                room_tag = str(row['room_tag']).split('.')[0] if row['room_tag'] else None
+                equipment_location = {
+                    'room_tag': row['room_tag'],
+                    'room_description': get_compartment_description(room_tag),
+                    'deck': row['deck']
+                }
+        
+        connected_cables = db.get_cables_for_equipment(tag_info['tag_name'])
+        for cable in connected_cables:
+            cable['start_room_description'] = get_compartment_description(
+                str(cable.get('start_room', '')).split('.')[0] if cable.get('start_room') else None
+            )
+            cable['dest_room_description'] = get_compartment_description(
+                str(cable.get('dest_room', '')).split('.')[0] if cable.get('dest_room') else None
+            )
+    
+    # Group results by PDF
+    pdfs = {}
+    for r in results:
+        path = r['relative_path']
+        if path not in pdfs:
+            # Get supplier info from metadata if not in database
+            filename_key = r['filename'].lower() if r['filename'] else ''
+            meta = drawing_metadata.get(filename_key, {})
+            
+            pdfs[path] = {
+                'filename': r['filename'],
+                'relative_path': path,
+                'document_description': r.get('document_description'),
+                'drawing_number': r.get('drawing_number'),
+                'supplier_code': r.get('supplier_code') or meta.get('supplier_code', ''),
+                'supplier_name': r.get('supplier_name') or meta.get('supplier_name', ''),
+                'pages': []
+            }
+        if r['page_number']:
+            pdfs[path]['pages'].append(r['page_number'])
+    
+    # Sort pages and convert to list
+    pdf_list = list(pdfs.values())
+    for pdf in pdf_list:
+        pdf['pages'] = sorted(set(pdf['pages']))
+    
+    return jsonify({
+        'found': True,
+        'tag_info': tag_info,
+        'pdfs': pdf_list,
+        'connection': connection,
+        'connected_cables': connected_cables,
+        'equipment_location': equipment_location
+    })
+
+
+@app.route('/api/search/partial/<partial>')
+@login_required
+def api_search_partial(partial):
+    """Search for tags containing the partial string."""
+    db = get_db()
+    tag_type = request.args.get('type')  # Optional filter
+    
+    results = db.search_tag_partial(partial, tag_type)
+    return jsonify({
+        'query': partial,
+        'results': results
+    })
+
+
+@app.route('/api/search/autocomplete')
+@login_required
+def api_autocomplete():
+    """Autocomplete endpoint for tag and PDF search."""
+    query = request.args.get('q', '').strip()
+    search_type = request.args.get('type', 'all')  # all, cable, equipment, pdf
+    
+    if len(query) < 2:
+        return jsonify([])
+    
+    suggestions = []
+    
+    # PDF search
+    if search_type == 'pdf':
+        # Search in drawing_metadata for PDFs
+        query_lower = query.lower()
+        pdf_matches = []
+        
+        for key, meta in drawing_metadata.items():
+            score = 0
+            match_field = None
+            
+            # Check filename
+            if query_lower in key:
+                score = 100 if key.startswith(query_lower) else 50
+                match_field = 'filename'
+            # Check description
+            elif meta.get('document_description') and query_lower in meta['document_description'].lower():
+                score = 40
+                match_field = 'description'
+            # Check supplier_code
+            elif meta.get('supplier_code') and query_lower in meta['supplier_code'].lower():
+                score = 60 if meta['supplier_code'].lower().startswith(query_lower) else 30
+                match_field = 'supplier_code'
+            # Check supplier_name
+            elif meta.get('supplier_name') and query_lower in meta['supplier_name'].lower():
+                score = 35
+                match_field = 'supplier_name'
+            
+            if score > 0:
+                pdf_matches.append({
+                    'filename': meta.get('filename', key),
+                    'document_description': meta.get('document_description', ''),
+                    'supplier_code': meta.get('supplier_code', ''),
+                    'supplier_name': meta.get('supplier_name', ''),
+                    'score': score,
+                    'match_field': match_field
+                })
+        
+        # Sort by score and take top 15
+        pdf_matches.sort(key=lambda x: (-x['score'], x['filename']))
+        
+        suggestions = [{
+            'tag_name': p['filename'],
+            'tag_type': 'pdf',
+            'description': p['document_description'],
+            'supplier_code': p['supplier_code'],
+            'supplier_name': p['supplier_name'],
+            'match_field': p['match_field']
+        } for p in pdf_matches[:15]]
+    
+    else:
+        # Tag search (existing behavior)
+        db = get_db()
+        tag_type = search_type if search_type in ['cable', 'equipment'] else None
+        results = db.search_tag_partial(query, tag_type)
+        
+        suggestions = [{
+            'tag_name': r['tag_name'],
+            'tag_type': r['tag_type'],
+            'description': r.get('description', ''),
+            'pdf_count': r['pdf_count'] or 0,
+            'match_priority': r.get('match_priority', 3)
+        } for r in results[:15]]
+    
+    return jsonify(suggestions)
+
+
+@app.route('/api/cables')
+@login_required
+def api_cables():
+    """Get all cables with connection information for DataTables."""
+    db = get_db()
+    
+    with db._get_connection() as conn:
+        cursor = conn.execute('''
+            SELECT 
+                c.tag_name AS cable_no,
+                c.description AS cable_type,
+                s.tag_name AS start_tag,
+                s.description AS start_description,
+                s.room_tag AS start_room,
+                s.deck AS start_deck,
+                d.tag_name AS dest_tag,
+                d.description AS dest_description,
+                d.room_tag AS dest_room,
+                d.deck AS dest_deck
+            FROM cable_connections cc
+            JOIN tags c ON cc.cable_tag_id = c.tag_id
+            JOIN tags s ON cc.start_equipment_tag_id = s.tag_id
+            JOIN tags d ON cc.dest_equipment_tag_id = d.tag_id
+            ORDER BY c.tag_name
+        ''')
+        
+        cables = []
+        for row in cursor.fetchall():
+            cable = dict(row)
+            # Add compartment descriptions
+            cable['start_room_description'] = get_compartment_description(
+                str(cable.get('start_room', '')).split('.')[0] if cable.get('start_room') else None
+            )
+            cable['dest_room_description'] = get_compartment_description(
+                str(cable.get('dest_room', '')).split('.')[0] if cable.get('dest_room') else None
+            )
+            cables.append(cable)
+        
+        return jsonify({'data': cables})
+
+
+@app.route('/api/cables/server-side')
+@login_required
+def api_cables_server_side():
+    """
+    Server-side processing endpoint for DataTables.
+    Supports pagination, sorting, and searching.
+    """
+    db = get_db()
+    
+    # DataTables parameters
+    draw = request.args.get('draw', type=int, default=1)
+    start = request.args.get('start', type=int, default=0)
+    length = request.args.get('length', type=int, default=25)
+    search_value = request.args.get('search[value]', '').strip()
+    
+    # Sorting
+    order_column_idx = request.args.get('order[0][column]', type=int, default=0)
+    order_dir = request.args.get('order[0][dir]', 'asc')
+    
+    # Map column index to database column
+    column_map = {
+        0: 'c.tag_name',      # cable_no
+        1: 'c.description',   # cable_type
+        2: 's.tag_name',      # start_tag
+        3: 's.description',   # start_description
+        4: 's.room_tag',      # start_location (room)
+        5: 'd.tag_name',      # dest_tag
+        6: 'd.description',   # dest_description
+        7: 'd.room_tag',      # dest_location (room)
+    }
+    
+    order_column = column_map.get(order_column_idx, 'c.tag_name')
+    order_direction = 'DESC' if order_dir == 'desc' else 'ASC'
+    
+    with db._get_connection() as conn:
+        # Base query
+        base_query = '''
+            FROM cable_connections cc
+            JOIN tags c ON cc.cable_tag_id = c.tag_id
+            JOIN tags s ON cc.start_equipment_tag_id = s.tag_id
+            JOIN tags d ON cc.dest_equipment_tag_id = d.tag_id
+        '''
+        
+        # Search filter
+        search_clause = ''
+        search_params = []
+        if search_value:
+            search_clause = '''
+                WHERE c.tag_name LIKE ? 
+                   OR c.description LIKE ?
+                   OR s.tag_name LIKE ? 
+                   OR s.description LIKE ?
+                   OR s.room_tag LIKE ?
+                   OR s.deck LIKE ?
+                   OR d.tag_name LIKE ? 
+                   OR d.description LIKE ?
+                   OR d.room_tag LIKE ?
+                   OR d.deck LIKE ?
+            '''
+            search_pattern = f'%{search_value}%'
+            search_params = [search_pattern] * 10
+        
+        # Get total count (unfiltered)
+        cursor = conn.execute(f'SELECT COUNT(*) {base_query}')
+        total_records = cursor.fetchone()[0]
+        
+        # Get filtered count
+        cursor = conn.execute(
+            f'SELECT COUNT(*) {base_query} {search_clause}',
+            search_params
+        )
+        filtered_records = cursor.fetchone()[0]
+        
+        # Get paginated data
+        data_query = f'''
+            SELECT 
+                c.tag_name AS cable_no,
+                c.description AS cable_type,
+                s.tag_name AS start_tag,
+                s.description AS start_description,
+                s.room_tag AS start_room,
+                s.deck AS start_deck,
+                d.tag_name AS dest_tag,
+                d.description AS dest_description,
+                d.room_tag AS dest_room,
+                d.deck AS dest_deck
+            {base_query}
+            {search_clause}
+            ORDER BY {order_column} {order_direction}
+            LIMIT ? OFFSET ?
+        '''
+        
+        cursor = conn.execute(data_query, search_params + [length, start])
+        
+        cables = []
+        for row in cursor.fetchall():
+            cable = dict(row)
+            # Add compartment descriptions
+            cable['start_room_description'] = get_compartment_description(
+                str(cable.get('start_room', '')).split('.')[0] if cable.get('start_room') else None
+            )
+            cable['dest_room_description'] = get_compartment_description(
+                str(cable.get('dest_room', '')).split('.')[0] if cable.get('dest_room') else None
+            )
+            cables.append(cable)
+        
+        return jsonify({
+            'draw': draw,
+            'recordsTotal': total_records,
+            'recordsFiltered': filtered_records,
+            'data': cables
+        })
+
+
+@app.route('/api/documents')
+@login_required
+def api_documents():
+    """Get all documents/PDFs for DataTables, including non-indexed ones from metadata."""
+    db = get_db()
+    
+    # First get indexed PDFs
+    indexed_docs = {}
+    with db._get_connection() as conn:
+        cursor = conn.execute('''
+            SELECT 
+                p.pdf_id,
+                p.filename,
+                p.relative_path,
+                p.document_description,
+                p.drawing_number,
+                p.supplier_code,
+                p.supplier_name,
+                p.page_count,
+                p.is_searchable,
+                p.ocr_processed,
+                (SELECT COUNT(*) FROM tag_occurrences WHERE pdf_id = p.pdf_id) as tag_count
+            FROM pdfs p
+            ORDER BY p.filename
+        ''')
+        
+        for row in cursor.fetchall():
+            doc = dict(row)
+            key = doc['filename'].lower()
+            indexed_docs[key] = doc
+    
+    documents = []
+    
+    # Process all documents from metadata (includes non-indexed)
+    for key, meta in drawing_metadata.items():
+        if key in indexed_docs:
+            # Use indexed data but enrich with metadata
+            doc = indexed_docs[key]
+            doc['category'] = meta.get('supergrandparent', '')
+            doc['subcategory'] = meta.get('superparent', '')
+            # Use database values if present, otherwise fall back to metadata
+            if not doc.get('supplier_code'):
+                doc['supplier_code'] = meta.get('supplier_code', '')
+            if not doc.get('supplier_name'):
+                doc['supplier_name'] = meta.get('supplier_name', '')
+            doc['revision'] = meta.get('revision', '')
+            doc['status'] = meta.get('status', '')
+            doc['indexed'] = True
+        else:
+            # Non-indexed document from metadata
+            doc = {
+                'pdf_id': None,
+                'filename': meta.get('filename', ''),
+                'relative_path': meta.get('relative_path_unix', ''),
+                'document_description': meta.get('document_description', ''),
+                'drawing_number': meta.get('supplier_code', ''),
+                'page_count': None,
+                'is_searchable': False,
+                'ocr_processed': False,
+                'tag_count': 0,
+                'category': meta.get('supergrandparent', ''),
+                'subcategory': meta.get('superparent', ''),
+                'supplier_code': meta.get('supplier_code', ''),
+                'supplier_name': meta.get('supplier_name', ''),
+                'revision': meta.get('revision', ''),
+                'status': meta.get('status', ''),
+                'indexed': False
+            }
+        documents.append(doc)
+    
+    # Also add any indexed documents not in metadata
+    for key, doc in indexed_docs.items():
+        if key not in drawing_metadata:
+            doc['category'] = ''
+            doc['subcategory'] = ''
+            if not doc.get('supplier_code'):
+                doc['supplier_code'] = ''
+            if not doc.get('supplier_name'):
+                doc['supplier_name'] = ''
+            doc['revision'] = ''
+            doc['status'] = ''
+            doc['indexed'] = True
+            documents.append(doc)
+    
+    return jsonify({'data': documents})
+
+
+@app.route('/api/pdf/<int:pdf_id>/tags')
+@login_required
+def api_pdf_tags(pdf_id):
+    """Get all tags found in a specific PDF."""
+    db = get_db()
+    
+    pdf_info = db.get_pdf_by_id(pdf_id)
+    if not pdf_info:
+        return jsonify({'error': 'PDF not found'}), 404
+    
+    contents = db.get_pdf_contents_by_id(pdf_id)
+    
+    return jsonify({
+        'pdf': pdf_info,
+        'tags': contents
+    })
+
+
+@app.route('/api/search/pdf/<path:query>')
+@login_required
+def api_search_pdf(query):
+    """Search for a PDF by filename, description, supplier_code, or supplier_name."""
+    db = get_db()
+    
+    # First try to find in metadata (includes non-indexed PDFs)
+    query_lower = query.lower()
+    found_meta = None
+    
+    for key, meta in drawing_metadata.items():
+        # Exact filename match
+        if key == query_lower or meta.get('filename', '').lower() == query_lower:
+            found_meta = meta
+            break
+        # Check supplier_code
+        if meta.get('supplier_code') and meta['supplier_code'].lower() == query_lower:
+            found_meta = meta
+            break
+    
+    # If no exact match, try partial matches
+    if not found_meta:
+        for key, meta in drawing_metadata.items():
+            if query_lower in key:
+                found_meta = meta
+                break
+            if meta.get('supplier_code') and query_lower in meta['supplier_code'].lower():
+                found_meta = meta
+                break
+            if meta.get('document_description') and query_lower in meta['document_description'].lower():
+                found_meta = meta
+                break
+            if meta.get('supplier_name') and query_lower in meta['supplier_name'].lower():
+                found_meta = meta
+                break
+    
+    # Try to find the PDF in database
+    pdf_info = None
+    pdf_id = None
+    
+    with db._get_connection() as conn:
+        # Search by multiple fields
+        cursor = conn.execute('''
+            SELECT pdf_id, filename, relative_path, document_description, 
+                   drawing_number, supplier_code, supplier_name, page_count,
+                   is_searchable, ocr_processed
+            FROM pdfs 
+            WHERE filename = ? 
+               OR filename LIKE ?
+               OR supplier_code = ?
+               OR supplier_code LIKE ?
+               OR document_description LIKE ?
+               OR supplier_name LIKE ?
+            LIMIT 1
+        ''', (query, f'%{query}%', query, f'%{query}%', f'%{query}%', f'%{query}%'))
+        row = cursor.fetchone()
+        
+        if row:
+            pdf_info = dict(row)
+            pdf_id = pdf_info['pdf_id']
+        elif found_meta:
+            # PDF exists in metadata but not indexed
+            pdf_info = {
+                'pdf_id': None,
+                'filename': found_meta.get('filename', ''),
+                'relative_path': found_meta.get('relative_path_unix', ''),
+                'document_description': found_meta.get('document_description', ''),
+                'drawing_number': found_meta.get('supplier_code', ''),
+                'supplier_code': found_meta.get('supplier_code', ''),
+                'supplier_name': found_meta.get('supplier_name', ''),
+                'page_count': None,
+                'is_searchable': False,
+                'ocr_processed': False
+            }
+        
+        if not pdf_info:
+            return jsonify({
+                'found': False,
+                'query': query,
+                'pdf': None,
+                'cables': [],
+                'equipment': []
+            })
+        
+        # Get metadata enrichment
+        key = pdf_info['filename'].lower()
+        if key in drawing_metadata:
+            meta = drawing_metadata[key]
+            pdf_info['category'] = meta.get('supergrandparent', '')
+            pdf_info['subcategory'] = meta.get('superparent', '')
+            if not pdf_info.get('supplier_code'):
+                pdf_info['supplier_code'] = meta.get('supplier_code', '')
+            if not pdf_info.get('supplier_name'):
+                pdf_info['supplier_name'] = meta.get('supplier_name', '')
+        
+        cables = []
+        equipment = []
+        
+        # Get tags only if PDF is indexed
+        if pdf_id:
+            cursor = conn.execute('''
+                SELECT DISTINCT t.tag_name, t.tag_type, t.description, 
+                       t.room_tag, t.deck, o.page_number
+                FROM tag_occurrences o
+                JOIN tags t ON o.tag_id = t.tag_id
+                WHERE o.pdf_id = ?
+                ORDER BY t.tag_type, t.tag_name, o.page_number
+            ''', (pdf_id,))
+        
+            for tag_row in cursor.fetchall():
+                tag_data = dict(tag_row)
+                # Add compartment description
+                if tag_data.get('room_tag'):
+                    room_key = str(tag_data['room_tag']).split('.')[0]
+                    tag_data['room_description'] = get_compartment_description(room_key)
+                
+                if tag_data['tag_type'] == 'cable':
+                    cables.append(tag_data)
+                else:
+                    equipment.append(tag_data)
+        
+        # Group by tag name with page numbers
+        def group_tags(tags):
+            grouped = {}
+            for t in tags:
+                name = t['tag_name']
+                if name not in grouped:
+                    grouped[name] = {
+                        'tag_name': t['tag_name'],
+                        'tag_type': t['tag_type'],
+                        'description': t['description'],
+                        'room_tag': t.get('room_tag'),
+                        'room_description': t.get('room_description'),
+                        'deck': t.get('deck'),
+                        'pages': []
+                    }
+                if t.get('page_number'):
+                    grouped[name]['pages'].append(t['page_number'])
+            
+            # Sort pages and convert to list
+            result = list(grouped.values())
+            for item in result:
+                item['pages'] = sorted(set(item['pages']))
+            return result
+        
+        return jsonify({
+            'found': True,
+            'filename': pdf_info['filename'],
+            'pdf': pdf_info,
+            'cables': group_tags(cables),
+            'equipment': group_tags(equipment)
+        })
+
+
+@app.route('/api/pdfs/search')
+@login_required
+def api_pdfs_search():
+    """Search PDFs by filename, description, or drawing number."""
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify({'results': []})
+    
+    db = get_db()
+    results = db.search_pdfs(query)
+    
+    return jsonify({'results': results})
+
+
+# =============================================================================
+# PDF SERVING
+# =============================================================================
+
+@app.route('/pdf/<path:filepath>')
+@login_required
+def serve_pdf(filepath):
+    """Serve a PDF file from the PDF_ROOT directory."""
+    if not PDF_ROOT:
+        abort(404, description="PDF_ROOT not configured")
+    
+    # Security: prevent directory traversal
+    # Normalize the path and ensure it stays within PDF_ROOT
+    safe_path = os.path.normpath(filepath)
+    if safe_path.startswith('..') or safe_path.startswith('/'):
+        abort(403, description="Invalid path")
+    
+    full_path = os.path.join(PDF_ROOT, safe_path)
+    full_path = os.path.normpath(full_path)
+    
+    # Verify the path is still within PDF_ROOT
+    if not full_path.startswith(os.path.normpath(PDF_ROOT)):
+        abort(403, description="Access denied")
+    
+    if not os.path.exists(full_path):
+        abort(404, description="PDF not found")
+    
+    return send_file(full_path, mimetype='application/pdf')
+
+
+# =============================================================================
+# PWA SUPPORT
+# =============================================================================
+
+@app.route('/manifest.json')
+def manifest():
+    """Serve PWA manifest."""
+    return jsonify({
+        "name": "Ship Cable Database",
+        "short_name": "CableDB",
+        "description": "Search cables, equipment, and drawings",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0a0e17",
+        "theme_color": "#00d4aa",
+        "icons": [
+            {
+                "src": "/static/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+            },
+            {
+                "src": "/static/icons/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png"
+            }
+        ]
+    })
+
+
+@app.route('/sw.js')
+def service_worker():
+    """Serve service worker from root."""
+    return send_file('static/js/sw.js', mimetype='application/javascript')
+
+
+# =============================================================================
+# CONFIGURATION API
+# =============================================================================
+
+@app.route('/api/config')
+@login_required
+def api_config():
+    """Return client configuration."""
+    return jsonify({
+        'pdf_root_configured': bool(PDF_ROOT),
+        'has_compartments': bool(compartments),
+        'has_metadata': bool(drawing_metadata)
+    })
+
+
+@app.route('/api/data-version')
+@login_required
+def api_data_version():
+    """Return data version info for cache invalidation."""
+    db = get_db()
+    stats = db.get_stats()
+    
+    # Create a version hash based on data counts
+    version_string = f"{stats['total_cables']}_{stats['total_equipment']}_{stats['total_pdfs']}_{stats['total_occurrences']}_{len(drawing_metadata)}"
+    import hashlib
+    version_hash = hashlib.md5(version_string.encode()).hexdigest()[:12]
+    
+    return jsonify({
+        'version': version_hash,
+        'stats': stats,
+        'metadata_count': len(drawing_metadata)
+    })
+
+
+if __name__ == '__main__':
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Equipment Explorer Web Interface')
+    parser.add_argument('--port', '-p', type=int, default=5000, help='Port to run on')
+    parser.add_argument('--host', '-H', default='127.0.0.1', help='Host to bind to')
+    parser.add_argument('--db', default='ship_cables.db', help='Path to database')
+    parser.add_argument('--pdf-root', help='Root directory for PDF files')
+    parser.add_argument('--metadata', default='drawing_metadata.pkl', help='Path to metadata pickle')
+    parser.add_argument('--compartments', default='compartments.pkl', help='Path to compartments pickle')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    
+    args = parser.parse_args()
+    
+    # Set configuration
+    DB_PATH = args.db
+    if args.pdf_root:
+        PDF_ROOT = args.pdf_root
+    METADATA_PATH = args.metadata
+    COMPARTMENTS_PATH = args.compartments
+    
+    # Reload data with new paths
+    db = None
+    auth_manager = None
+    load_metadata()
+    load_compartments()
+    
+    # Initialize auth (creates default admin if needed)
+    get_auth()
+    
+    print(f"\n{'='*60}")
+    print("Equipment Explorer - Web Interface")
+    print(f"{'='*60}")
+    print(f"Database: {DB_PATH}")
+    print(f"PDF Root: {PDF_ROOT or '(not configured)'}")
+    print(f"Metadata: {METADATA_PATH} ({len(drawing_metadata)} entries)")
+    print(f"Compartments: {COMPARTMENTS_PATH} ({len(compartments)} entries)")
+    print(f"{'='*60}")
+    print(f"Starting server at http://{args.host}:{args.port}")
+    print(f"Default admin login: admin / admin")
+    print(f"{'='*60}\n")
+    
+    app.run(host=args.host, port=args.port, debug=args.debug)

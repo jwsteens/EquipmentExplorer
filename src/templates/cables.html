@@ -1,0 +1,484 @@
+{% extends "base.html" %}
+
+{% block title %}Cables - Equipment Explorer{% endblock %}
+
+{% block content %}
+<style>
+/* Column group dividers */
+#cablesTable th:nth-child(2),
+#cablesTable td:nth-child(2) {
+    border-right: 2px solid var(--border-default) !important;
+}
+
+#cablesTable th:nth-child(5),
+#cablesTable td:nth-child(5) {
+    border-right: 2px solid var(--border-default) !important;
+}
+
+/* Pin button in table cells */
+#cablesTable .pin-btn {
+    padding: 4px;
+    min-width: auto;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+#cablesTable tr:hover .pin-btn {
+    opacity: 1;
+}
+
+#cablesTable .pin-btn.pinned {
+    opacity: 1;
+}
+</style>
+
+<div class="page-header">
+    <div class="page-title">
+        <h1>Cable List</h1>
+        <span class="cache-status" id="cacheStatus"></span>
+    </div>
+    <p class="page-subtitle">All cables with their equipment connections</p>
+</div>
+
+<div class="card card-table">
+    <div class="card-body">
+        <table id="cablesTable" class="display" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>Cable No</th>
+                    <th>Type</th>
+                    <th>Start Equipment</th>
+                    <th>Start Description</th>
+                    <th>Start Location</th>
+                    <th>Dest Equipment</th>
+                    <th>Dest Description</th>
+                    <th>Dest Location</th>
+                    <th style="width: 40px;">Pin</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// =============================================================================
+// IndexedDB Cache Manager
+// =============================================================================
+const DB_NAME = 'ShipCableDB';
+const DB_VERSION = 2;
+
+class CacheManager {
+    constructor() {
+        this.db = null;
+    }
+    
+    async open() {
+        if (this.db) return this.db;
+        
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve(this.db);
+            };
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                
+                // Cables store - use auto-increment for faster bulk insert
+                if (!db.objectStoreNames.contains('cables')) {
+                    db.createObjectStore('cables', { autoIncrement: true });
+                }
+                if (!db.objectStoreNames.contains('documents')) {
+                    db.createObjectStore('documents', { autoIncrement: true });
+                }
+                if (!db.objectStoreNames.contains('metadata')) {
+                    db.createObjectStore('metadata', { keyPath: 'key' });
+                }
+            };
+        });
+    }
+    
+    async getCables() {
+        const db = await this.open();
+        
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['metadata', 'cables'], 'readonly');
+            const metaStore = tx.objectStore('metadata');
+            const dataStore = tx.objectStore('cables');
+            
+            const metaRequest = metaStore.get('cables_meta');
+            
+            metaRequest.onsuccess = () => {
+                const meta = metaRequest.result;
+                if (!meta || !meta.data) {
+                    resolve(null);
+                    return;
+                }
+                
+                resolve({
+                    version: meta.version,
+                    timestamp: meta.timestamp,
+                    data: meta.data
+                });
+            };
+            metaRequest.onerror = () => resolve(null);
+        });
+    }
+    
+    async setCables(version, data) {
+        const db = await this.open();
+        
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['metadata'], 'readwrite');
+            const metaStore = tx.objectStore('metadata');
+            
+            // Store everything in metadata for faster retrieval
+            metaStore.put({
+                key: 'cables_meta',
+                version: version,
+                timestamp: Date.now(),
+                data: data
+            });
+            
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    
+    async getVersion() {
+        const db = await this.open();
+        
+        return new Promise((resolve) => {
+            const tx = db.transaction(['metadata'], 'readonly');
+            const store = tx.objectStore('metadata');
+            const request = store.get('cables_meta');
+            
+            request.onsuccess = () => {
+                resolve(request.result?.version || null);
+            };
+            request.onerror = () => resolve(null);
+        });
+    }
+}
+
+const cache = new CacheManager();
+
+// =============================================================================
+// Data Loading with Cache Strategy
+// =============================================================================
+
+function updateCacheStatus(status, type = 'info') {
+    const el = document.getElementById('cacheStatus');
+    const icons = {
+        'info': '⏳',
+        'success': '✓',
+        'cached': '📦',
+        'warning': '⚠️',
+        'offline': '📴'
+    };
+    const colors = {
+        'info': 'var(--text-muted)',
+        'success': 'var(--accent-primary)',
+        'cached': 'var(--accent-secondary)',
+        'warning': 'var(--accent-warning)',
+        'offline': 'var(--accent-warning)'
+    };
+    el.innerHTML = `<span style="font-size: 0.8rem; color: ${colors[type]}; margin-left: var(--space-md);">${icons[type]} ${status}</span>`;
+}
+
+async function loadCablesData() {
+    let dataToUse = null;
+    let serverVersion = null;
+    
+    // Step 1: Try to get cached data first (instant load)
+    const cached = await cache.getCables();
+    
+    if (cached && cached.data && cached.data.length > 0) {
+        dataToUse = cached.data;
+        const cacheAge = Math.round((Date.now() - cached.timestamp) / 1000 / 60);
+        updateCacheStatus(`Loaded from cache (${cacheAge}m ago)`, 'cached');
+        
+        // Initialize table immediately with cached data
+        initializeTable(dataToUse);
+        
+        // Step 2: Check server version in background
+        try {
+            const versionResp = await fetch('/api/data-version');
+            const versionData = await versionResp.json();
+            serverVersion = versionData.version;
+            
+            if (serverVersion !== cached.version) {
+                // Data changed - refresh in background
+                updateCacheStatus('Updating cache...', 'info');
+                await refreshFromServer(serverVersion);
+            } else {
+                updateCacheStatus(`Cache up-to-date`, 'success');
+            }
+        } catch (e) {
+            // Offline or server error - keep using cache
+            console.log('Server check failed, using cache:', e);
+            updateCacheStatus('Offline - using cache', 'offline');
+        }
+        
+        return; // Table already initialized
+    }
+    
+    // Step 3: No cache - must fetch from server
+    updateCacheStatus('Loading from server...', 'info');
+    
+    try {
+        // Get version first
+        const versionResp = await fetch('/api/data-version');
+        const versionData = await versionResp.json();
+        serverVersion = versionData.version;
+        
+        // Fetch all cables
+        const response = await fetch('/api/cables');
+        const result = await response.json();
+        dataToUse = result.data;
+        
+        // Cache for next time
+        await cache.setCables(serverVersion, dataToUse);
+        updateCacheStatus(`Loaded & cached (${dataToUse.length} cables)`, 'success');
+        
+        // Initialize table
+        initializeTable(dataToUse);
+        
+    } catch (e) {
+        console.error('Failed to load cables:', e);
+        updateCacheStatus('Failed to load data', 'warning');
+        initializeTable([]);
+    }
+}
+
+async function refreshFromServer(serverVersion) {
+    try {
+        const response = await fetch('/api/cables');
+        const result = await response.json();
+        
+        // Update cache
+        await cache.setCables(serverVersion, result.data);
+        
+        // Refresh table
+        const table = $('#cablesTable').DataTable();
+        table.clear();
+        table.rows.add(result.data);
+        table.draw();
+        
+        updateCacheStatus('Cache updated', 'success');
+    } catch (e) {
+        console.error('Background refresh failed:', e);
+        updateCacheStatus('Update failed - using cache', 'warning');
+    }
+}
+
+// =============================================================================
+// DataTable Initialization
+// =============================================================================
+
+let tableInitialized = false;
+
+function initializeTable(data) {
+    if (tableInitialized) return;
+    tableInitialized = true;
+    
+    $('#cablesTable').DataTable({
+        data: data,
+        
+        // Use deferred rendering for faster initial display
+        deferRender: true,
+        
+        columns: [
+            { 
+                data: 'cable_no',
+                render: function(data, type, row) {
+                    if (type === 'display') {
+                        return `<a href="/search?q=${encodeURIComponent(data)}" class="cell-link">${escapeHtml(data)}</a>`;
+                    }
+                    return data;
+                }
+            },
+            { 
+                data: 'cable_type',
+                render: function(data) {
+                    return data ? `<span class="text-muted" style="font-size: 0.8rem;">${escapeHtml(data)}</span>` : '-';
+                }
+            },
+            { 
+                data: 'start_tag',
+                render: function(data, type, row) {
+                    if (type === 'display') {
+                        return `<a href="/search?q=${encodeURIComponent(data)}" class="cell-link">${escapeHtml(data)}</a>`;
+                    }
+                    return data;
+                }
+            },
+            { 
+                data: 'start_description',
+                render: function(data) {
+                    return data ? escapeHtml(data) : '-';
+                }
+            },
+            { 
+                data: 'start_room',
+                render: function(data, type, row) {
+                    const room = row.start_room;
+                    const roomDesc = row.start_room_description;
+                    const deck = row.start_deck;
+                    
+                    if (type !== 'display') {
+                        return `${room || ''} ${roomDesc || ''} ${deck || ''}`;
+                    }
+                    
+                    if (!room && !deck) return '-';
+                    
+                    let parts = [];
+                    if (room) {
+                        parts.push(`<span title="${escapeHtml(roomDesc || '')}">📍 ${escapeHtml(String(room))}</span>`);
+                    }
+                    if (roomDesc) {
+                        parts.push(`<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(roomDesc)}</span>`);
+                    }
+                    if (deck) {
+                        parts.push(`<span class="text-muted" style="font-size:0.75rem;">🚢 ${escapeHtml(deck)}</span>`);
+                    }
+                    
+                    return `<div style="display:flex;flex-direction:column;gap:2px;font-size:0.85rem;">${parts.join('')}</div>`;
+                }
+            },
+            { 
+                data: 'dest_tag',
+                render: function(data, type, row) {
+                    if (type === 'display') {
+                        return `<a href="/search?q=${encodeURIComponent(data)}" class="cell-link">${escapeHtml(data)}</a>`;
+                    }
+                    return data;
+                }
+            },
+            { 
+                data: 'dest_description',
+                render: function(data) {
+                    return data ? escapeHtml(data) : '-';
+                }
+            },
+            { 
+                data: 'dest_room',
+                render: function(data, type, row) {
+                    const room = row.dest_room;
+                    const roomDesc = row.dest_room_description;
+                    const deck = row.dest_deck;
+                    
+                    if (type !== 'display') {
+                        return `${room || ''} ${roomDesc || ''} ${deck || ''}`;
+                    }
+                    
+                    if (!room && !deck) return '-';
+                    
+                    let parts = [];
+                    if (room) {
+                        parts.push(`<span title="${escapeHtml(roomDesc || '')}">📍 ${escapeHtml(String(room))}</span>`);
+                    }
+                    if (roomDesc) {
+                        parts.push(`<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(roomDesc)}</span>`);
+                    }
+                    if (deck) {
+                        parts.push(`<span class="text-muted" style="font-size:0.75rem;">🚢 ${escapeHtml(deck)}</span>`);
+                    }
+                    
+                    return `<div style="display:flex;flex-direction:column;gap:2px;font-size:0.85rem;">${parts.join('')}</div>`;
+                }
+            },
+            {
+                data: null,
+                orderable: false,
+                searchable: false,
+                render: function(data, type, row) {
+                    if (type !== 'display') return '';
+                    // Use the createCablePinButton function from main.js
+                    return createCablePinButton(
+                        row.cable_no, 
+                        row.cable_type || '', 
+                        row.start_tag || '', 
+                        row.dest_tag || ''
+                    );
+                }
+            }
+        ],
+        
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+        order: [[0, 'asc']],
+        
+        dom: '<"flex justify-between items-center mb-md"<"flex items-center gap-md"lf>B>rtip',
+        buttons: [
+            {
+                extend: 'csv',
+                text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV',
+                className: 'btn btn-secondary btn-sm',
+                filename: 'cable_list',
+                exportOptions: {
+                    columns: [0, 1, 2, 3, 4, 5, 6, 7] // Exclude pin column from export
+                }
+            },
+            {
+                text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:4px"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>Refresh',
+                className: 'btn btn-ghost btn-sm',
+                action: async function(e, dt, node, config) {
+                    updateCacheStatus('Refreshing...', 'info');
+                    try {
+                        const versionResp = await fetch('/api/data-version');
+                        const versionData = await versionResp.json();
+                        await refreshFromServer(versionData.version);
+                    } catch(e) {
+                        updateCacheStatus('Refresh failed', 'warning');
+                    }
+                }
+            }
+        ],
+        
+        language: {
+            search: "",
+            searchPlaceholder: "Search cables...",
+            info: "Showing _START_ to _END_ of _TOTAL_ cables",
+            infoEmpty: "No cables found",
+            infoFiltered: "(filtered from _MAX_ total)",
+            lengthMenu: "Show _MENU_",
+            paginate: {
+                first: "First",
+                last: "Last",
+                next: "Next",
+                previous: "Prev"
+            }
+        },
+        
+        initComplete: function() {
+            $('.dataTables_filter input').addClass('search-input').css({
+                'width': '300px',
+                'padding': 'var(--space-sm) var(--space-md)'
+            });
+        }
+    });
+}
+
+// =============================================================================
+// Initialize
+// =============================================================================
+
+$(document).ready(function() {
+    loadCablesData();
+});
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error - Equipment Explorer</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-primary);
+        }
+        
+        .error-container {
+            text-align: center;
+            padding: var(--space-xl);
+        }
+        
+        .error-container svg {
+            width: 80px;
+            height: 80px;
+            color: var(--accent-danger);
+            margin-bottom: var(--space-lg);
+        }
+        
+        .error-container h1 {
+            font-size: 2rem;
+            color: var(--text-primary);
+            margin-bottom: var(--space-md);
+        }
+        
+        .error-container p {
+            color: var(--text-secondary);
+            margin-bottom: var(--space-xl);
+        }
+        
+        .error-container .btn {
+            padding: var(--space-md) var(--space-xl);
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <h1>Something went wrong</h1>
+        <p>An error occurred while processing your request.</p>
+        <a href="/" class="btn btn-primary">Go to Dashboard</a>
+    </div>
+</body>
+</html>

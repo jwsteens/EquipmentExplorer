@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" fill="#0a0e17" rx="24"/>
+  <g transform="translate(32, 32)" stroke="#00d4aa" stroke-width="6" fill="none">
+    <!-- Cable/connection icon -->
+    <path d="M16 48h96" stroke-linecap="round"/>
+    <path d="M16 80h96" stroke-linecap="round"/>
+    <circle cx="32" cy="48" r="8" fill="#00d4aa"/>
+    <circle cx="96" cy="80" r="8" fill="#00d4aa"/>
+    <!-- Database layers -->
+    <ellipse cx="64" cy="24" rx="48" ry="16"/>
+    <path d="M16 24v80c0 8.84 21.49 16 48 16s48-7.16 48-16V24"/>
+    <path d="M16 56c0 8.84 21.49 16 48 16s48-7.16 48-16"/>
+  </g>
+</svg>

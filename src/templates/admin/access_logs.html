@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Access Logs - Equipment Explorer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title">
+        <h1>Access Logs</h1>
+    </div>
+    <p class="page-subtitle">User activity and login history ({{ total }} total entries)</p>
+</div>
+
+<div style="margin-bottom: var(--space-lg);">
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-ghost">Back to Admin</a>
+</div>
+
+<div class="card">
+    <div class="card-body" style="overflow-x: auto;">
+        <table class="display" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                    <th>IP Address</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td style="white-space: nowrap; font-size: 0.85rem; color: var(--text-muted);">
+                        {{ log.timestamp[:19] if log.timestamp else '-' }}
+                    </td>
+                    <td>
+                        <span style="font-weight: 500;">{{ log.username or 'Unknown' }}</span>
+                    </td>
+                    <td>
+                        <span class="badge {% if 'login' in log.action %}badge-success{% elif 'failed' in log.action %}badge-warning{% elif 'delete' in log.action %}badge-muted{% else %}badge-muted{% endif %}">
+                            {{ log.action }}
+                        </span>
+                    </td>
+                    <td class="text-secondary" style="font-size: 0.875rem; max-width: 300px; overflow: hidden; text-overflow: ellipsis;">
+                        {{ log.details or '-' }}
+                    </td>
+                    <td style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted);">
+                        {{ log.ip_address or '-' }}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not logs %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: var(--space-xl); color: var(--text-muted);">
+                        No access logs yet
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div style="display: flex; justify-content: center; gap: var(--space-sm); margin-top: var(--space-lg);">
+    {% if page > 1 %}
+        <a href="{{ url_for('admin.access_logs', page=page-1) }}" class="btn btn-secondary btn-sm">← Previous</a>
+    {% endif %}
+    
+    <span style="display: flex; align-items: center; padding: 0 var(--space-md); color: var(--text-muted);">
+        Page {{ page }} of {{ total_pages }}
+    </span>
+    
+    {% if page < total_pages %}
+        <a href="{{ url_for('admin.access_logs', page=page+1) }}" class="btn btn-secondary btn-sm">Next →</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
