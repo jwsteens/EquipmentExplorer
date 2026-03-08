@@ -145,7 +145,7 @@ def import_equipment_and_cables(conn: sqlite3.Connection, filepath: str) -> None
     click.echo("\nMap fields to columns (Enter to accept default, letter or name to override):")
 
     cable_tag_col  = _prompt_column("cableTag   [required]", "cableNo",                       col_map, df, required=True)
-    cable_type1_col = _prompt_column("cableType1 [required]", "cableType1",                   col_map, df, required=True)
+    cable_type1_col = _prompt_column("cableType1", "cableType1",                                col_map, df, required=False)
     cable_type2_col = _prompt_column("cableType2",            "cableType2",                   col_map, df, required=False)
     start_tag_col  = _prompt_column("startTag   [required]", "equipmentStartTag",              col_map, df, required=True)
     start_desc_col = _prompt_column("startDesc",             "equipmentStartDescription",      col_map, df, required=False)
