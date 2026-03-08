@@ -1,137 +1,171 @@
--- Ship Cable and Equipment PDF Indexing Database Schema
--- Normalized design for efficient bidirectional lookups
-
--- Table for storing PDF documents
-CREATE TABLE IF NOT EXISTS pdfs (
-    pdf_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    filename TEXT NOT NULL,
-    relative_path TEXT NOT NULL UNIQUE,
-    document_description TEXT,
-    drawing_number TEXT,
-    supplier_code TEXT,
-    supplier_name TEXT,
-    file_size_bytes INTEGER,
-    page_count INTEGER,
-    is_searchable BOOLEAN DEFAULT 0,
-    ocr_processed BOOLEAN DEFAULT 0,
-    date_indexed TIMESTAMP,
-    date_modified TIMESTAMP
-);
-
--- Index for looking up PDFs by drawing number
-CREATE INDEX IF NOT EXISTS idx_pdfs_drawing ON pdfs(drawing_number);
-
--- Index for looking up PDFs by supplier
-CREATE INDEX IF NOT EXISTS idx_pdfs_supplier ON pdfs(supplier_name);
-
--- Table for all tags (both cables and equipment)
-CREATE TABLE IF NOT EXISTS tags (
-    tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tag_name TEXT NOT NULL UNIQUE,
-    tag_type TEXT NOT NULL CHECK(tag_type IN ('cable', 'equipment')),
+-- Table for equipment
+CREATE TABLE IF NOT EXISTS equipment (
+    equipment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tag TEXT NOT NULL UNIQUE,
     description TEXT,
     room_tag TEXT,
     deck TEXT,
     date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Junction table for tag occurrences in PDFs
-CREATE TABLE IF NOT EXISTS tag_occurrences (
-    occurrence_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tag_id INTEGER NOT NULL,
-    pdf_id INTEGER NOT NULL,
-    page_number INTEGER,
-    confidence REAL DEFAULT 1.0,  -- For OCR results, can store confidence score
-    date_found TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (tag_id) REFERENCES tags(tag_id) ON DELETE CASCADE,
-    FOREIGN KEY (pdf_id) REFERENCES pdfs(pdf_id) ON DELETE CASCADE,
-    UNIQUE(tag_id, pdf_id, page_number)  -- Prevent duplicate entries
-);
+CREATE INDEX IF NOT EXISTS idx_equipment_tag ON equipment(tag);
+CREATE INDEX IF NOT EXISTS idx_equipment_room ON equipment(room_tag);
+CREATE INDEX IF NOT EXISTS idx_equipment_deck ON equipment(deck);
 
--- Table for cable connections (which equipment a cable connects)
--- This stores the FROM -> TO relationship for each cable
-CREATE TABLE IF NOT EXISTS cable_connections (
-    connection_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    cable_tag_id INTEGER NOT NULL,
-    start_equipment_tag_id INTEGER NOT NULL,
-    dest_equipment_tag_id INTEGER NOT NULL,
+
+
+-- Table for cables
+CREATE TABLE IF NOT EXISTS cables (
+    cable_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tag TEXT NOT NULL UNIQUE,
+    type TEXT,
+    start_equipment_id INTEGER,
+    dest_equipment_id INTEGER,
     date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (cable_tag_id) REFERENCES tags(tag_id) ON DELETE CASCADE,
-    FOREIGN KEY (start_equipment_tag_id) REFERENCES tags(tag_id) ON DELETE CASCADE,
-    FOREIGN KEY (dest_equipment_tag_id) REFERENCES tags(tag_id) ON DELETE CASCADE,
-    UNIQUE(cable_tag_id)  -- Each cable has one connection record
+    FOREIGN KEY (start_equipment_id) REFERENCES equipment(equipment_id) ON DELETE SET NULL,
+    FOREIGN KEY (dest_equipment_id) REFERENCES equipment(equipment_id) ON DELETE SET NULL
 );
 
--- Indexes for fast lookups
-CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(tag_name);
-CREATE INDEX IF NOT EXISTS idx_tags_type ON tags(tag_type);
-CREATE INDEX IF NOT EXISTS idx_tags_description ON tags(description);
-CREATE INDEX IF NOT EXISTS idx_occurrences_tag ON tag_occurrences(tag_id);
-CREATE INDEX IF NOT EXISTS idx_occurrences_pdf ON tag_occurrences(pdf_id);
-CREATE INDEX IF NOT EXISTS idx_pdfs_path ON pdfs(relative_path);
-CREATE INDEX IF NOT EXISTS idx_pdfs_searchable ON pdfs(is_searchable);
-CREATE INDEX IF NOT EXISTS idx_cable_conn_cable ON cable_connections(cable_tag_id);
-CREATE INDEX IF NOT EXISTS idx_cable_conn_start ON cable_connections(start_equipment_tag_id);
-CREATE INDEX IF NOT EXISTS idx_cable_conn_dest ON cable_connections(dest_equipment_tag_id);
+CREATE INDEX IF NOT EXISTS idx_cables_tag ON cables(tag);
+CREATE INDEX IF NOT EXISTS idx_cables_start ON cables(start_equipment_id);
+CREATE INDEX IF NOT EXISTS idx_cables_dest ON cables(dest_equipment_id);
 
--- View for easy cable lookups
-CREATE VIEW IF NOT EXISTS cable_pdf_view AS
-SELECT 
-    t.tag_name AS cable_tag,
-    t.description,
-    p.filename AS pdf_filename,
-    p.relative_path AS pdf_path,
-    o.page_number,
-    o.confidence
-FROM tags t
-JOIN tag_occurrences o ON t.tag_id = o.tag_id
-JOIN pdfs p ON o.pdf_id = p.pdf_id
-WHERE t.tag_type = 'cable';
 
--- View for easy equipment lookups
-CREATE VIEW IF NOT EXISTS equipment_pdf_view AS
-SELECT 
-    t.tag_name AS equipment_tag,
-    t.description,
-    t.room_tag,
-    t.deck,
-    p.filename AS pdf_filename,
-    p.relative_path AS pdf_path,
-    o.page_number,
-    o.confidence
-FROM tags t
-JOIN tag_occurrences o ON t.tag_id = o.tag_id
-JOIN pdfs p ON o.pdf_id = p.pdf_id
-WHERE t.tag_type = 'equipment';
 
--- View for PDF contents (all tags found in a PDF)
-CREATE VIEW IF NOT EXISTS pdf_contents_view AS
-SELECT 
-    p.filename AS pdf_filename,
-    p.relative_path AS pdf_path,
-    t.tag_type,
-    t.tag_name,
-    t.description,
-    o.page_number
-FROM pdfs p
-JOIN tag_occurrences o ON p.pdf_id = o.pdf_id
-JOIN tags t ON o.tag_id = t.tag_id
-ORDER BY p.filename, t.tag_type, t.tag_name;
+-- Table for storing PDF documents
+CREATE TABLE IF NOT EXISTS documents (
+    pdf_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    relative_path TEXT NOT NULL UNIQUE,
+    document_description TEXT,
+    supplier_code TEXT,
+    supplier_name TEXT,
+    supergrandparent TEXT,
+    superparent TEXT,
+    revision TEXT,
+    status TEXT,
+    file_size_bytes INTEGER,
+    page_count INTEGER,
+    content_hash TEXT,
+    to_be_indexed BOOLEAN DEFAULT 0,
+    date_indexed TIMESTAMP,
+    date_modified TIMESTAMP
+);
 
--- View for cable connections with full details
+CREATE INDEX IF NOT EXISTS idx_documents_supplier ON documents(supplier_name);
+CREATE INDEX IF NOT EXISTS idx_documents_supergrandparent ON documents(supergrandparent);
+CREATE INDEX IF NOT EXISTS idx_documents_superparent ON documents(superparent);
+
+
+
+-- Table for equipment occurrences in PDFs
+CREATE TABLE IF NOT EXISTS equipment_occurrences (
+    occurrence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    equipment_id INTEGER NOT NULL REFERENCES equipment(equipment_id) ON DELETE CASCADE,
+    pdf_id INTEGER NOT NULL REFERENCES documents(pdf_id) ON DELETE CASCADE,
+    page_number INTEGER,
+    UNIQUE(equipment_id, pdf_id, page_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_equipment_occurrences_equipment ON equipment_occurrences(equipment_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_occurrences_pdf ON equipment_occurrences(pdf_id);
+
+
+
+-- Table for cable occurrences in PDFs
+CREATE TABLE IF NOT EXISTS cable_occurrences (
+    occurrence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cable_id INTEGER NOT NULL REFERENCES cables(cable_id) ON DELETE CASCADE,
+    pdf_id INTEGER NOT NULL REFERENCES documents(pdf_id) ON DELETE CASCADE,
+    page_number INTEGER,
+    confidence REAL DEFAULT 1.0,
+    UNIQUE(cable_id, pdf_id, page_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cable_occurrences_cable ON cable_occurrences(cable_id);
+CREATE INDEX IF NOT EXISTS idx_cable_occurrences_pdf ON cable_occurrences(pdf_id);
+
+
+
+-- View for cable details with connected equipment
 CREATE VIEW IF NOT EXISTS cable_connections_view AS
-SELECT 
-    c.tag_name AS cable_tag,
-    c.description AS cable_description,
-    s.tag_name AS start_equipment_tag,
+SELECT
+    c.cable_id,
+    c.tag AS cable_tag,
+    c.type AS cable_type,
+    s.tag AS start_equipment_tag,
     s.description AS start_equipment_description,
     s.room_tag AS start_room,
     s.deck AS start_deck,
-    d.tag_name AS dest_equipment_tag,
+    d.tag AS dest_equipment_tag,
     d.description AS dest_equipment_description,
     d.room_tag AS dest_room,
     d.deck AS dest_deck
-FROM cable_connections cc
-JOIN tags c ON cc.cable_tag_id = c.tag_id
-JOIN tags s ON cc.start_equipment_tag_id = s.tag_id
-JOIN tags d ON cc.dest_equipment_tag_id = d.tag_id;
+FROM cables c
+LEFT JOIN equipment s ON c.start_equipment_id = s.equipment_id
+LEFT JOIN equipment d ON c.dest_equipment_id = d.equipment_id;
+
+
+
+-- View for cable occurrences with document details
+CREATE VIEW IF NOT EXISTS cable_documents_view AS
+SELECT
+    c.tag AS cable_tag,
+    c.type AS cable_type,
+    d.filename AS pdf_filename,
+    d.relative_path AS pdf_path,
+    d.document_description,
+    d.supplier_name,
+    o.page_number,
+    o.confidence
+FROM cable_occurrences o
+JOIN cables c ON o.cable_id = c.cable_id
+JOIN documents d ON o.pdf_id = d.pdf_id;
+
+
+
+-- View for equipment occurrences with document details
+CREATE VIEW IF NOT EXISTS equipment_documents_view AS
+SELECT
+    e.tag AS equipment_tag,
+    e.description,
+    e.room_tag,
+    e.deck,
+    d.filename AS pdf_filename,
+    d.relative_path AS pdf_path,
+    d.document_description,
+    d.supplier_name,
+    o.page_number
+FROM equipment_occurrences o
+JOIN equipment e ON o.equipment_id = e.equipment_id
+JOIN documents d ON o.pdf_id = d.pdf_id;
+
+
+
+-- View for document contents (all cables and equipment found in a document)
+CREATE VIEW IF NOT EXISTS document_contents_view AS
+SELECT
+    d.filename AS pdf_filename,
+    d.relative_path AS pdf_path,
+    'cable' AS tag_type,
+    c.tag AS tag,
+    NULL AS description,
+    o.page_number
+FROM cable_occurrences o
+JOIN documents d ON o.pdf_id = d.pdf_id
+JOIN cables c ON o.cable_id = c.cable_id
+
+UNION ALL
+
+SELECT
+    d.filename AS pdf_filename,
+    d.relative_path AS pdf_path,
+    'equipment' AS tag_type,
+    e.tag AS tag,
+    e.description,
+    o.page_number
+FROM equipment_occurrences o
+JOIN documents d ON o.pdf_id = d.pdf_id
+JOIN equipment e ON o.equipment_id = e.equipment_id
+
+ORDER BY pdf_filename, tag_type, tag;
