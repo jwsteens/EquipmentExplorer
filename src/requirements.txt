@@ -46,3 +46,4 @@ urllib3==2.6.3
 waitress==3.0.2
 Werkzeug==3.1.5
 openpyxl
+rich
