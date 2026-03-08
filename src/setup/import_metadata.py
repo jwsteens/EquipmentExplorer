@@ -3,29 +3,16 @@ import sqlite3
 
 import click
 import pandas as pd
-from rich.console import Console
-from rich.table import Table
 
 from setup.import_equipment_and_cables import (
     _build_col_map,
+    _preview_table,
     _print_columns,
     _prompt_column,
     _val,
 )
 
 DEFAULT_HYPERLINK_RE = r'=HYPERLINK\("([^"]+)"'
-
-
-def _preview_table(records: list[dict]) -> None:
-    if not records:
-        click.echo("  (no records to preview)")
-        return
-    table = Table(show_header=True, header_style="bold", show_lines=True)
-    for col in records[0]:
-        table.add_column(col, overflow="fold")
-    for record in records[:5]:
-        table.add_row(*[str(v) if v is not None else "" for v in record.values()])
-    Console().print(table)
 
 
 def _extract_path(cell_value: object, pattern: re.Pattern) -> str | None:
@@ -49,8 +36,8 @@ def import_metadata(conn: sqlite3.Connection, filepath: str) -> None:
     ext = filepath.rsplit(".", 1)[-1].lower()
 
     header_row = click.prompt(
-        "  Header row (1 = first row is header, 4 = fourth row is header, 0 = no header)",
-        default=4,
+        "  Header row (1 = first row is header, 5 = fifth row is header, 0 = no header)",
+        default=5,
         type=int,
     )
     pandas_header = None if header_row == 0 else header_row - 1
@@ -155,7 +142,7 @@ def import_metadata(conn: sqlite3.Connection, filepath: str) -> None:
 
     # ── Step 5: preview ───────────────────────────────────────────────────────
     click.echo("\nFirst 5 rows of mapped data:")
-    _preview_table(records)
+    _preview_table(records[:5])
 
     if not click.confirm("\nProceed with update?", default=True):
         click.echo("Update cancelled.")

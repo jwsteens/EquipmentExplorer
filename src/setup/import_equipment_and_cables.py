@@ -3,6 +3,8 @@ import string
 
 import click
 import pandas as pd
+from rich.console import Console
+from rich.table import Table
 
 
 def _col_letters(n: int) -> list[str]:
@@ -110,6 +112,19 @@ def _val(row: pd.Series, col: object | None) -> str | None:
     return s if s else None
 
 
+def _preview_table(records: list[dict]) -> None:
+    """Print a bordered, word-wrapping rich table for a list of row dicts."""
+    if not records:
+        click.echo("  (no records to preview)")
+        return
+    table = Table(show_header=True, header_style="bold", show_lines=True)
+    for col in records[0]:
+        table.add_column(col, overflow="fold")
+    for record in records:
+        table.add_row(*[str(v) if v is not None else "" for v in record.values()])
+    Console().print(table)
+
+
 def import_equipment_and_cables(conn: sqlite3.Connection, filepath: str) -> None:
     """Import cables and equipment from an Excel or CSV cable list."""
 
@@ -179,7 +194,7 @@ def import_equipment_and_cables(conn: sqlite3.Connection, filepath: str) -> None
         })
 
     click.echo("\nFirst 5 rows of mapped data:")
-    click.echo(pd.DataFrame(preview_rows).to_string(index=False))
+    _preview_table(preview_rows)
 
     if not click.confirm("\nProceed with import?", default=True):
         click.echo("Import cancelled.")
@@ -306,6 +321,4 @@ def import_equipment_and_cables(conn: sqlite3.Connection, filepath: str) -> None
     ).fetchall()
 
     click.echo("\nFirst imported cables:")
-    click.echo(
-        pd.DataFrame([dict(r) for r in rows]).to_string(index=False)
-    )
+    _preview_table([dict(r) for r in rows])
