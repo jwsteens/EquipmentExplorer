@@ -266,7 +266,14 @@ def import_equipment_and_cables(conn: sqlite3.Connection, filepath: str) -> None
                 }
 
         conn.executemany(
-            "INSERT OR REPLACE INTO equipment (tag, description, room_tag, deck) VALUES (?,?,?,?)",
+            """
+            INSERT INTO equipment (tag, description, room_tag, deck)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(tag) DO UPDATE SET
+                description = excluded.description,
+                room_tag    = excluded.room_tag,
+                deck        = excluded.deck
+            """,
             [
                 (tag, d["description"], d["room_tag"], d["deck"])
                 for tag, d in equipment_dict.items()
@@ -300,8 +307,14 @@ def import_equipment_and_cables(conn: sqlite3.Connection, filepath: str) -> None
             ))
 
         conn.executemany(
-            "INSERT OR REPLACE INTO cables (tag, type, start_equipment_id, dest_equipment_id)"
-            " VALUES (?,?,?,?)",
+            """
+            INSERT INTO cables (tag, type, start_equipment_id, dest_equipment_id)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(tag) DO UPDATE SET
+                type               = excluded.type,
+                start_equipment_id = excluded.start_equipment_id,
+                dest_equipment_id  = excluded.dest_equipment_id
+            """,
             cable_rows,
         )
 
