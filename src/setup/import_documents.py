@@ -4,7 +4,8 @@ from datetime import datetime
 from pathlib import Path
 
 import click
-import pandas as pd
+from rich.console import Console
+from rich.table import Table
 
 
 def _md5(path: Path) -> str:
@@ -51,7 +52,13 @@ def import_documents(conn: sqlite3.Connection, documents_dir: str) -> None:
 
     # ── Preview ───────────────────────────────────────────────────────────────
     click.echo("\nFirst 5 files:")
-    click.echo(pd.DataFrame(records[:5]).to_string(index=False))
+    table = Table(show_header=True, header_style="bold", show_lines=True)
+    for col in ("filename", "relative_path", "file_size_bytes", "content_hash", "date_modified"):
+        table.add_column(col, overflow="fold")
+    for r in records[:5]:
+        table.add_row(r["filename"], r["relative_path"], str(r["file_size_bytes"]),
+                      r["content_hash"], r["date_modified"])
+    Console().print(table)
 
     if not click.confirm(f"\nImport all {len(records)} file(s) into the database?", default=True):
         click.echo("  Import cancelled.")
