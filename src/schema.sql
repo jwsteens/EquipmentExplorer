@@ -1,3 +1,14 @@
+-- Table for compartments
+CREATE TABLE IF NOT EXISTS compartments (
+    compartment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tag TEXT NOT NULL UNIQUE,
+    description TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_compartments_tag ON compartments(tag);
+
+
+
 -- Table for equipment
 CREATE TABLE IF NOT EXISTS equipment (
     equipment_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +98,7 @@ CREATE INDEX IF NOT EXISTS idx_cable_occurrences_pdf ON cable_occurrences(pdf_id
 
 
 
--- View for cable details with connected equipment
+-- View for cable details with connected equipment and compartment
 CREATE VIEW IF NOT EXISTS cable_connections_view AS
 SELECT
     c.cable_id,
@@ -95,15 +106,19 @@ SELECT
     c.type AS cable_type,
     s.tag AS start_equipment_tag,
     s.description AS start_equipment_description,
-    s.room_tag AS start_room,
+    s.room_tag AS start_room_tag,
+    cs.description AS start_compartment_description,
     s.deck AS start_deck,
     d.tag AS dest_equipment_tag,
     d.description AS dest_equipment_description,
-    d.room_tag AS dest_room,
+    d.room_tag AS dest_room_tag,
+    cd.description AS dest_compartment_description,
     d.deck AS dest_deck
 FROM cables c
 LEFT JOIN equipment s ON c.start_equipment_id = s.equipment_id
-LEFT JOIN equipment d ON c.dest_equipment_id = d.equipment_id;
+LEFT JOIN compartments cs ON s.room_tag = cs.tag
+LEFT JOIN equipment d ON c.dest_equipment_id = d.equipment_id
+LEFT JOIN compartments cd ON d.room_tag = cd.tag;
 
 
 
@@ -130,6 +145,7 @@ SELECT
     e.tag AS equipment_tag,
     e.description,
     e.room_tag,
+    c.description AS compartment_description,
     e.deck,
     d.filename AS pdf_filename,
     d.relative_path AS pdf_path,
@@ -138,6 +154,7 @@ SELECT
     o.page_number
 FROM equipment_occurrences o
 JOIN equipment e ON o.equipment_id = e.equipment_id
+LEFT JOIN compartments c ON e.room_tag = c.tag
 JOIN documents d ON o.pdf_id = d.pdf_id;
 
 
