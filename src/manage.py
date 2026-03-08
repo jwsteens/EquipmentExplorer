@@ -261,6 +261,10 @@ def resetdb():
     conn.execute("DELETE FROM equipment")
     conn.execute("DELETE FROM documents")
     conn.execute("DELETE FROM compartments")
+    conn.execute(
+        "DELETE FROM sqlite_sequence WHERE name IN "
+        "('equipment_occurrences','cable_occurrences','cables','equipment','documents','compartments')"
+    )
     conn.commit()
     conn.close()
 
