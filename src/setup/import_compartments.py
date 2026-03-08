@@ -48,7 +48,7 @@ def import_compartments(conn: sqlite3.Connection, filepath: str) -> None:
     click.echo("\nMap fields to columns (Enter to accept default, letter or name to override):")
 
     tag_col  = _prompt_column("tag         [required]", "roomKey",         col_map, df, required=True)
-    desc_col = _prompt_column("description",            "roomDescription", col_map, df, required=False)
+    desc_col = _prompt_column("description [required]", "roomDescription", col_map, df, required=True)
 
     # ── Step 3: preview ──────────────────────────────────────────────────────
     preview_rows = []
