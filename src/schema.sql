@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS pdfs (
     page_count INTEGER,
     is_searchable BOOLEAN DEFAULT 0,
     ocr_processed BOOLEAN DEFAULT 0,
-    date_indexed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    date_indexed TIMESTAMP,
     date_modified TIMESTAMP
 );
 
