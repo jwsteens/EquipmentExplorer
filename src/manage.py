@@ -55,8 +55,7 @@ def _run_documents(conn):
         "  database so they can be indexed and searched later.\n"
         "  Expected input: path to the root folder containing the PDF documents."
     )
-    docs_dir = prompt_path("\n  Path to documents root directory")
-    import_documents(conn, docs_dir)
+    import_documents(conn)
 
 
 def _run_metadata(conn):

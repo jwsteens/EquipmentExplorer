@@ -1,11 +1,15 @@
 import hashlib
+import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 import click
+from dotenv import set_key
 from rich.console import Console
 from rich.table import Table
+
+_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
 
 
 def _md5(path: Path) -> str:
@@ -17,8 +21,16 @@ def _md5(path: Path) -> str:
     return h.hexdigest()
 
 
-def import_documents(conn: sqlite3.Connection, documents_dir: str) -> None:
+def import_documents(conn: sqlite3.Connection) -> None:
     """Scan a documents directory and register PDFs in the database."""
+
+    existing = os.getenv("DOCUMENTS_PATH")
+    if existing:
+        documents_dir = click.prompt("  Documents directory", default=existing)
+    else:
+        documents_dir = click.prompt("  Documents directory")
+
+    set_key(str(_ENV_PATH), "DOCUMENTS_PATH", documents_dir)
 
     documents_dir = documents_dir.replace("\\", "/")
     root = Path(documents_dir)
