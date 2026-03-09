@@ -1,9 +1,9 @@
 To be fixed on the front-end:
 - [x] When viewing equipment on search page, only cables from are shown.
 - [x] Partial match results return a huge ass symbol.
-- [ ] Sessions are not saved when app is restarted.
-- [ ] Admin should be able to end user sessions.
-- [ ] Admin dashboard needs a revamp.
+- [x] Sessions are not saved when app is restarted.
+- [x] Admin should be able to end user sessions.
+- [x] Admin dashboard needs a revamp.
 - [x] Documents page should show supergrandparent and superparent separately.
 - [x] Cable list should show narrower rows.
 - [x] Index dashboard needs a revamp.

@@ -9,15 +9,22 @@ import secrets
 import mimetypes
 import traceback
 from pathlib import Path
-from flask import Flask, render_template, jsonify, request, send_file, abort, session, redirect, url_for, flash, g
-from database import ShipCableDB
-from auth import AuthManager, login_required, admin_required, editor_required, SECRET_KEY
-from admin_routes import admin_bp
-
 from dotenv import load_dotenv
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
+
+# Persist SECRET_KEY to .env on first run so sessions survive restarts
+if not os.environ.get('SECRET_KEY'):
+    _key = secrets.token_hex(32)
+    os.environ['SECRET_KEY'] = _key
+    with open(_PROJECT_ROOT / ".env", 'a') as _f:
+        _f.write(f'\nSECRET_KEY={_key}\n')
+
+from flask import Flask, render_template, jsonify, request, send_file, abort, session, redirect, url_for, flash, g
+from database import ShipCableDB
+from auth import AuthManager, login_required, admin_required, editor_required, SECRET_KEY
+from admin_routes import admin_bp
 
 def _abs(raw: str) -> str:
     p = Path(raw)
@@ -53,9 +60,7 @@ def get_auth():
 # Load data on startup
 with app.app_context():
     os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
-    auth = get_auth()  # initializes DB schema + auth tables + default admin
-    with auth.db._get_connection() as conn:
-        conn.execute('DELETE FROM sessions')
+    get_auth()  # initializes DB schema + auth tables + default admin
 
 
 # =============================================================================
