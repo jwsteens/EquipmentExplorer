@@ -20,6 +20,7 @@ from setup.import_documents import import_documents
 from setup.import_metadata import import_metadata
 
 DB_PATH = _abs(os.getenv("DB_PATH", "data/equipment_explorer.db"))
+DOCUMENTS_PATH = _abs(os.getenv("DOCUMENTS_PATH", ""))
 
 _SEP = "=" * 60
 
@@ -224,6 +225,46 @@ def import_metadata_cmd():
     _run_metadata(conn)
     conn.close()
     click.echo("\nDone.")
+
+
+@cli.command("index-documents")
+@click.option("--workers", "-w", type=int, default=None,
+              help="Number of worker processes (default: all CPUs)")
+@click.option("--resume", is_flag=True, help="Resume from saved state")
+@click.option("--limit", "-l", type=int,
+              help="Limit number of documents to process (for testing)")
+def index_documents_cmd(workers, resume, limit):
+    """Index documents marked to_be_indexed in the database."""
+    from index_documents import run_indexing
+
+    click.echo(_SEP)
+    click.echo("  Equipment Explorer — Index Documents")
+    click.echo(_SEP)
+
+    if not os.path.isdir(DOCUMENTS_PATH):
+        click.echo(f"\nError: DOCUMENTS_PATH is not set or not a directory: {DOCUMENTS_PATH!r}")
+        click.echo("  Set DOCUMENTS_PATH in your .env file.")
+        return
+
+    stats = run_indexing(
+        db_path=DB_PATH,
+        pdf_root=DOCUMENTS_PATH,
+        workers=workers,
+        resume=resume,
+        limit=limit,
+    )
+
+    click.echo(f"\n{_SEP}")
+    click.echo("  Indexing Complete!")
+    click.echo("")
+    click.echo(f"  Total processed:        {stats['total_pdfs']}")
+    click.echo(f"  Searchable:             {stats['searchable_pdfs']}")
+    click.echo(f"  Non-searchable (OCR):   {stats['non_searchable_pdfs']}")
+    click.echo(f"  Tags found:             {stats['total_tags_found']}")
+    click.echo(f"    Cables:               {stats['total_cables_found']}")
+    click.echo(f"    Equipment:            {stats['total_equipment_found']}")
+    click.echo(f"  Errors:                 {stats['errors']}")
+    click.echo(_SEP)
 
 
 @cli.command("import-compartments")

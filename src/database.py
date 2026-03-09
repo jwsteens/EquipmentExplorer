@@ -242,10 +242,11 @@ class ShipCableDB:
             return dict(row) if row else None
 
     def mark_document_indexed(self, pdf_id: int):
-        """Mark a document as indexed by setting date_indexed to now."""
+        """Mark a document as indexed (clears to_be_indexed, sets date_indexed)."""
         with self._get_connection() as conn:
             conn.execute('''
-                UPDATE documents SET date_indexed = CURRENT_TIMESTAMP
+                UPDATE documents
+                SET to_be_indexed = 0, date_indexed = CURRENT_TIMESTAMP
                 WHERE pdf_id = ?
             ''', (pdf_id,))
 
