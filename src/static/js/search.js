@@ -16,26 +16,33 @@ const loadingState = document.getElementById('loadingState');
 const resultsContent = document.getElementById('resultsContent');
 const filterButtons = document.querySelectorAll('.filter-btn');
 
-// Initialize
-document.addEventListener('DOMContentLoaded', function() {
-    // Check for query parameter
+function loadFromUrl() {
     const urlParams = new URLSearchParams(window.location.search);
     const queryParam = urlParams.get('q');
     const typeParam = urlParams.get('type');
-    
-    // Set filter if specified
-    if (typeParam && ['cable', 'equipment', 'pdf'].includes(typeParam)) {
-        currentFilter = typeParam;
-        filterButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.type === typeParam);
-        });
-    }
-    
+
+    // Set filter
+    currentFilter = (typeParam && ['cable', 'equipment', 'pdf'].includes(typeParam)) ? typeParam : 'all';
+    filterButtons.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.type === currentFilter);
+    });
+
     if (queryParam) {
         searchInput.value = queryParam;
         performSearch(queryParam);
+    } else {
+        searchInput.value = '';
+        emptyState.classList.remove('hidden');
+        resultsContent.classList.add('hidden');
     }
-    
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    loadFromUrl();
+
+    window.addEventListener('popstate', loadFromUrl);
+
     // Filter buttons
     filterButtons.forEach(btn => {
         btn.addEventListener('click', function() {

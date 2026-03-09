@@ -6,6 +6,6 @@ To be fixed on the front-end:
 - [ ] Admin dashboard needs a revamp.
 - [x] Documents page should show supergrandparent and superparent separately.
 - [x] Cable list should show narrower rows.
-- [ ] Index dashboard needs a revamp.
+- [x] Index dashboard needs a revamp.
 - [ ] Favicon not working.
-- [ ] Back button not working as expected.
+- [x] Back button not working as expected in searches.
