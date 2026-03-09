@@ -14,6 +14,54 @@
     <a href="{{ url_for('admin.dashboard') }}" class="btn btn-ghost">Back to Admin</a>
 </div>
 
+<!-- Active Sessions -->
+<h2 style="font-size: 1.1rem; margin-bottom: var(--space-md);">
+    Active Sessions
+    <span class="badge badge-success" style="margin-left: var(--space-sm); font-size: 0.8rem;">{{ active_sessions|length }}</span>
+</h2>
+<div class="card" style="margin-bottom: var(--space-xl);">
+    <div class="card-body" style="overflow-x: auto;">
+        <table class="display" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>IP Address</th>
+                    <th>Created</th>
+                    <th>Expires</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in active_sessions %}
+                <tr>
+                    <td style="font-weight: 500;">{{ s.username }}</td>
+                    <td style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted);">{{ s.ip_address or '-' }}</td>
+                    <td style="font-size: 0.85rem; color: var(--text-muted); white-space: nowrap;">{{ s.created_at[:19] if s.created_at else '-' }}</td>
+                    <td style="font-size: 0.85rem; color: var(--text-muted); white-space: nowrap;">{{ s.expires_at[:19] if s.expires_at else '-' }}</td>
+                    <td style="text-align: right;">
+                        <form method="post" action="{{ url_for('admin.terminate_session', session_id=s.session_id) }}" style="display: inline;">
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                onclick="return confirm('Terminate session for {{ s.username }}?')">
+                                Terminate
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not active_sessions %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: var(--space-xl); color: var(--text-muted);">
+                        No active sessions
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Access Logs -->
+<h2 style="font-size: 1.1rem; margin-bottom: var(--space-md);">Log</h2>
 <div class="card">
     <div class="card-body" style="overflow-x: auto;">
         <table class="display" style="width: 100%;">
@@ -50,7 +98,7 @@
                 {% endfor %}
                 {% if not logs %}
                 <tr>
-                    <td colspan="5" style="text-align: center; padding: var(--space-xl); color: var(--text-muted);">
+                    <td colspan="6" style="text-align: center; padding: var(--space-xl); color: var(--text-muted);">
                         No access logs yet
                     </td>
                 </tr>
@@ -61,16 +109,17 @@
 </div>
 
 <!-- Pagination -->
+
 {% if total_pages > 1 %}
 <div style="display: flex; justify-content: center; gap: var(--space-sm); margin-top: var(--space-lg);">
     {% if page > 1 %}
         <a href="{{ url_for('admin.access_logs', page=page-1) }}" class="btn btn-secondary btn-sm">← Previous</a>
     {% endif %}
-    
+
     <span style="display: flex; align-items: center; padding: 0 var(--space-md); color: var(--text-muted);">
         Page {{ page }} of {{ total_pages }}
     </span>
-    
+
     {% if page < total_pages %}
         <a href="{{ url_for('admin.access_logs', page=page+1) }}" class="btn btn-secondary btn-sm">Next →</a>
     {% endif %}

@@ -53,7 +53,9 @@ def get_auth():
 # Load data on startup
 with app.app_context():
     os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
-    get_auth()  # initializes DB schema + auth tables + default admin
+    auth = get_auth()  # initializes DB schema + auth tables + default admin
+    with auth.db._get_connection() as conn:
+        conn.execute('DELETE FROM sessions')
 
 
 # =============================================================================

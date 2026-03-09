@@ -10,67 +10,6 @@
     <p class="page-subtitle">System administration and management</p>
 </div>
 
-<!-- Stats Cards -->
-<div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-lg); margin-bottom: var(--space-xl);">
-    <div class="stat-card">
-        <div class="stat-icon" style="color: var(--accent-primary);">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-            </svg>
-        </div>
-        <div class="stat-value">{{ user_count }}</div>
-        <div class="stat-label">Users</div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon" style="color: var(--accent-secondary);">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-            </svg>
-        </div>
-        <div class="stat-value">{{ session_count }}</div>
-        <div class="stat-label">Active Sessions</div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon" style="color: var(--accent-cable);">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-            </svg>
-        </div>
-        <div class="stat-value">{{ stats.cables }}</div>
-        <div class="stat-label">Cables</div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon" style="color: var(--accent-equipment);">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
-                <rect x="4" y="4" width="16" height="16" rx="2"/>
-                <circle cx="12" cy="12" r="4"/>
-            </svg>
-        </div>
-        <div class="stat-value">{{ stats.equipment }}</div>
-        <div class="stat-label">Equipment</div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon" style="color: var(--accent-danger);">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-        </div>
-        <div class="stat-value">{{ error_count }}</div>
-        <div class="stat-label">Error Logs</div>
-    </div>
-</div>
-
-<!-- Admin Menu -->
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-lg);">
     <!-- User Management -->
     <div class="card">
@@ -86,75 +25,34 @@
             </h3>
         </div>
         <div class="card-body">
+            <div class="stat-value" style="margin-bottom: var(--space-sm);">{{ user_count }} {{ 'user' if user_count == 1 else 'users' }}</div>
             <p class="text-secondary" style="margin-bottom: var(--space-lg);">
                 Manage user accounts, roles, and permissions.
             </p>
-            <a href="{{ url_for('admin.users') }}" class="btn btn-primary">Manage Users</a>
+            <a href="{{ url_for('admin.users') }}" class="btn btn-primary">Manage users</a>
         </div>
     </div>
-    
-    <!-- Database Management -->
-    <div class="card">
-        <div class="card-header">
-            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
-                    <ellipse cx="12" cy="5" rx="9" ry="3"/>
-                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
-                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-                </svg>
-                Database Management
-            </h3>
-        </div>
-        <div class="card-body">
-            <p class="text-secondary" style="margin-bottom: var(--space-lg);">
-                Configure paths, manage indexing, and database settings.
-            </p>
-            <a href="{{ url_for('admin.database') }}" class="btn btn-primary">Manage Database</a>
-        </div>
-    </div>
-    
-    <!-- Cable Management -->
-    <div class="card">
-        <div class="card-header">
-            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                </svg>
-                Cables & Equipment
-            </h3>
-        </div>
-        <div class="card-body">
-            <p class="text-secondary" style="margin-bottom: var(--space-lg);">
-                Manually add or manage cables and equipment.
-            </p>
-            <div style="display: flex; gap: var(--space-sm);">
-                <a href="{{ url_for('admin.manage_cables') }}" class="btn btn-secondary">Cables</a>
-                <a href="{{ url_for('admin.manage_equipment') }}" class="btn btn-secondary">Equipment</a>
-            </div>
-        </div>
-    </div>
-    
+
     <!-- Access Logs -->
     <div class="card">
         <div class="card-header">
             <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                 </svg>
-                Access Logs
+                Sessions
             </h3>
         </div>
         <div class="card-body">
+            <div class="stat-value" style="margin-bottom: var(--space-sm);">{{ session_count }} {{ 'session' if session_count == 1 else 'sessions' }}</div>
             <p class="text-secondary" style="margin-bottom: var(--space-lg);">
-                View user activity and login history.
+                View user activity, login history, and active sessions.
             </p>
-            <a href="{{ url_for('admin.access_logs') }}" class="btn btn-primary">View Logs</a>
+            <a href="{{ url_for('admin.access_logs') }}" class="btn btn-primary">View sessions and logs</a>
         </div>
     </div>
-    
+
     <!-- Error Logs -->
     <div class="card">
         <div class="card-header">
@@ -168,10 +66,11 @@
             </h3>
         </div>
         <div class="card-body">
+            <div class="stat-value" style="color: var(--accent-danger); margin-bottom: var(--space-sm);">{{ error_count }} {{ 'error' if error_count == 1 else 'errors' }}</div>
             <p class="text-secondary" style="margin-bottom: var(--space-lg);">
                 View application errors and exceptions.
             </p>
-            <a href="{{ url_for('admin.error_logs') }}" class="btn btn-primary">View Errors</a>
+            <a href="{{ url_for('admin.error_logs') }}" class="btn btn-primary">View errors</a>
         </div>
     </div>
 </div>

@@ -393,20 +393,35 @@ def api_delete_equipment(tag_id):
 def access_logs():
     """View access logs."""
     auth = get_auth()
-    
+
     page = request.args.get('page', 1, type=int)
     per_page = 50
     offset = (page - 1) * per_page
-    
+
     logs = auth.get_access_logs(limit=per_page, offset=offset)
     total = auth.get_access_log_count()
     total_pages = (total + per_page - 1) // per_page
-    
+
+    active_sessions = auth.get_active_sessions()
+
     return render_template('admin/access_logs.html',
                          logs=logs,
                          page=page,
                          total_pages=total_pages,
-                         total=total)
+                         total=total,
+                         active_sessions=active_sessions)
+
+
+@admin_bp.route('/api/sessions/<session_id>/terminate', methods=['POST'])
+@admin_required
+def terminate_session(session_id):
+    """Terminate a specific session."""
+    auth = get_auth()
+    auth.destroy_session(session_id)
+    auth.log_access(g.user['user_id'], g.user['username'], 'session_terminated',
+                    f'Admin terminated session {session_id[:8]}…',
+                    request.remote_addr, request.user_agent.string)
+    return redirect(request.referrer or url_for('admin.access_logs'))
 
 
 @admin_bp.route('/logs/errors')
