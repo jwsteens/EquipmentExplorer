@@ -25,6 +25,9 @@
                     <th>Tags</th>
                     <th>Status</th>
                     <th>Actions</th>
+                    {% if current_user and current_user.role == 'admin' %}
+                    <th>Index</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody></tbody>
@@ -56,11 +59,13 @@
 
 {% block scripts %}
 <script>
+const isAdmin = {{ 'true' if current_user and current_user.role == 'admin' else 'false' }};
+
 // =============================================================================
 // IndexedDB Cache Manager
 // =============================================================================
 const DB_NAME = 'ShipCableDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 class CacheManager {
     constructor() {
@@ -81,7 +86,7 @@ class CacheManager {
             
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-                
+
                 if (!db.objectStoreNames.contains('cables')) {
                     db.createObjectStore('cables', { autoIncrement: true });
                 }
@@ -248,13 +253,11 @@ let tableInitialized = false;
 function initializeTable(data) {
     if (tableInitialized) return;
     tableInitialized = true;
-    
-    $('#documentsTable').DataTable({
-        data: data,
-        deferRender: true,
-        
-        columns: [
-            { 
+
+    const columns = [];
+
+    columns.push(
+            {
                 data: 'filename',
                 render: function(data, type, row) {
                     if (type === 'display') {
@@ -271,11 +274,11 @@ function initializeTable(data) {
                     return `<span title="${escapeHtml(data)}">${escapeHtml(truncated)}</span>`;
                 }
             },
-            { 
-                data: 'category',
+            {
+                data: 'supergrandparent',
                 render: function(data, type, row) {
                     if (!data) return '-';
-                    const sub = row.subcategory;
+                    const sub = row.superparent;
                     if (type === 'display') {
                         return `<span class="text-muted" style="font-size: 0.8rem;" title="${escapeHtml(sub || '')}">${escapeHtml(data)}</span>`;
                     }
@@ -314,26 +317,16 @@ function initializeTable(data) {
                     return data || 0;
                 }
             },
-            { 
+            {
                 data: null,
                 render: function(data, type, row) {
                     if (type !== 'display') {
-                        if (row.indexed === false) return 'not indexed';
-                        if (row.is_searchable) return 'indexed';
-                        if (row.ocr_processed) return 'ocr done';
-                        return 'needs ocr';
+                        return row.indexed ? 'indexed' : 'not indexed';
                     }
-                    
-                    if (row.indexed === false) {
-                        return '<span class="badge badge-muted">Not Indexed</span>';
-                    }
-                    if (row.is_searchable) {
+                    if (row.indexed) {
                         return '<span class="badge badge-success">Indexed</span>';
                     }
-                    if (row.ocr_processed) {
-                        return '<span class="badge badge-warning">OCR Done</span>';
-                    }
-                    return '<span class="badge badge-muted">Needs OCR</span>';
+                    return '<span class="badge badge-muted">Not Indexed</span>';
                 }
             },
             { 
@@ -358,7 +351,7 @@ function initializeTable(data) {
                     `;
                     
                     // Add Contents button only for indexed PDFs
-                    if (row.pdf_id && row.is_searchable) {
+                    if (row.pdf_id && row.indexed) {
                         buttons += `
                             <a href="/search?q=${encodeURIComponent(row.filename)}&type=pdf" 
                                class="btn btn-ghost btn-sm"
@@ -390,8 +383,27 @@ function initializeTable(data) {
                     return buttons;
                 }
             }
-        ],
-        
+    );
+
+    if (isAdmin) {
+        columns.push({
+            data: null,
+            orderable: false,
+            width: '40px',
+            render: function(data, type, row) {
+                if (type !== 'display') return row.to_be_indexed ? 1 : 0;
+                const disabled = row.pdf_id ? '' : 'disabled';
+                const checked = row.to_be_indexed ? 'checked' : '';
+                return `<input type="checkbox" class="index-flag-cb" data-pdf-id="${row.pdf_id}" ${checked} ${disabled} style="cursor:${row.pdf_id ? 'pointer' : 'not-allowed'};">`;
+            }
+        });
+    }
+
+    $('#documentsTable').DataTable({
+        data: data,
+        deferRender: true,
+        columns: columns,
+
         pageLength: 25,
         lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
         order: [[0, 'asc']],
@@ -440,8 +452,60 @@ function initializeTable(data) {
                 'width': '300px',
                 'padding': 'var(--space-sm) var(--space-md)'
             });
+
+            if (isAdmin) {
+                const selectAllHtml = `
+                    <div style="display:flex;align-items:center;gap:6px;margin-left:8px;">
+                        <span style="font-size:0.8rem;color:var(--text-muted);">Indexing selection:</span>
+                        <button id="selectAllVisible" class="btn btn-ghost btn-sm">Select all visible</button>
+                        <button id="deselectAllVisible" class="btn btn-ghost btn-sm">Deselect all visible</button>
+                    </div>`;
+                $(this.api().table().container()).find('.dt-buttons').append(selectAllHtml);
+
+                async function setAllVisible(checked) {
+                    const table = $('#documentsTable').DataTable();
+                    const visibleRows = table.rows({ search: 'applied' }).data().toArray()
+                        .filter(row => row.pdf_id);
+
+                    table.rows({ search: 'applied' }).nodes().each(function(node) {
+                        const cb = node.querySelector('.index-flag-cb');
+                        if (cb && !cb.disabled) cb.checked = checked;
+                    });
+
+                    await Promise.all(visibleRows.map(row =>
+                        fetch(`/api/documents/${row.pdf_id}/index-flag`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ to_be_indexed: checked })
+                        })
+                    ));
+                }
+
+                document.getElementById('selectAllVisible').addEventListener('click', () => setAllVisible(true));
+                document.getElementById('deselectAllVisible').addEventListener('click', () => setAllVisible(false));
+            }
         }
     });
+
+    if (isAdmin) {
+        $('#documentsTable').on('change', '.index-flag-cb', async function() {
+            const cb = this;
+            const pdfId = cb.dataset.pdfId;
+            const newVal = cb.checked;
+            try {
+                const resp = await fetch(`/api/documents/${pdfId}/index-flag`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ to_be_indexed: newVal })
+                });
+                if (!resp.ok) throw new Error('Request failed');
+            } catch (e) {
+                cb.checked = !newVal;
+                cb.style.outline = '2px solid red';
+                setTimeout(() => cb.style.outline = '', 2000);
+            }
+        });
+    }
 }
 
 // =============================================================================

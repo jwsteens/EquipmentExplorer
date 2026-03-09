@@ -5,7 +5,6 @@ A Flask-based web application for searching cables, equipment, and drawings.
 """
 
 import os
-import pickle
 import secrets
 import mimetypes
 import traceback
@@ -30,11 +29,9 @@ app.secret_key = SECRET_KEY
 # Configuration — always absolute so send_file and ShipCableDB work regardless of CWD
 DB_PATH = _abs(os.environ.get('DB_PATH', 'data/equipment_explorer.db'))
 PDF_ROOT = _abs(os.environ.get('DOCUMENTS_PATH', 'data/documents'))
-METADATA_PATH = _abs(os.environ.get('METADATA_PATH', 'drawing_metadata.pkl'))
 # Initialize database and auth
 db = None
 auth_manager = None
-drawing_metadata = {}
 
 
 def get_db():
@@ -53,21 +50,10 @@ def get_auth():
     return auth_manager
 
 
-def load_metadata():
-    """Load drawing metadata from pickle file."""
-    global drawing_metadata
-    if os.path.exists(METADATA_PATH):
-        with open(METADATA_PATH, 'rb') as f:
-            drawing_metadata = pickle.load(f)
-    return drawing_metadata
-
-
 # Load data on startup
 with app.app_context():
     os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
     get_auth()  # initializes DB schema + auth tables + default admin
-    load_metadata()
-    print(f"Loaded {len(drawing_metadata)} drawing metadata entries")
 
 
 # =============================================================================
@@ -386,16 +372,12 @@ def api_search_tag(tag_name):
     for r in results:
         path = r['relative_path']
         if path not in pdfs:
-            # Get supplier info from metadata if not in database
-            filename_key = r['filename'].lower() if r['filename'] else ''
-            meta = drawing_metadata.get(filename_key, {})
-            
             pdfs[path] = {
                 'filename': r['filename'],
                 'relative_path': path,
                 'document_description': r.get('document_description'),
-                'supplier_code': r.get('supplier_code') or meta.get('supplier_code', ''),
-                'supplier_name': r.get('supplier_name') or meta.get('supplier_name', ''),
+                'supplier_code': r.get('supplier_code') or '',
+                'supplier_name': r.get('supplier_name') or '',
                 'pages': []
             }
         if r['page_number']:
@@ -444,44 +426,52 @@ def api_autocomplete():
     
     # PDF search
     if search_type == 'pdf':
-        # Search in drawing_metadata for PDFs
         query_lower = query.lower()
+        db = get_db()
         pdf_matches = []
-        
-        for key, meta in drawing_metadata.items():
-            score = 0
-            match_field = None
-            
-            # Check filename
-            if query_lower in key:
-                score = 100 if key.startswith(query_lower) else 50
-                match_field = 'filename'
-            # Check description
-            elif meta.get('document_description') and query_lower in meta['document_description'].lower():
-                score = 40
-                match_field = 'description'
-            # Check supplier_code
-            elif meta.get('supplier_code') and query_lower in meta['supplier_code'].lower():
-                score = 60 if meta['supplier_code'].lower().startswith(query_lower) else 30
-                match_field = 'supplier_code'
-            # Check supplier_name
-            elif meta.get('supplier_name') and query_lower in meta['supplier_name'].lower():
-                score = 35
-                match_field = 'supplier_name'
-            
-            if score > 0:
-                pdf_matches.append({
-                    'filename': meta.get('filename', key),
-                    'document_description': meta.get('document_description', ''),
-                    'supplier_code': meta.get('supplier_code', ''),
-                    'supplier_name': meta.get('supplier_name', ''),
-                    'score': score,
-                    'match_field': match_field
-                })
-        
-        # Sort by score and take top 15
+
+        with db._get_connection() as conn:
+            cursor = conn.execute('''
+                SELECT filename, document_description, supplier_code, supplier_name
+                FROM documents
+                WHERE LOWER(filename) LIKE ?
+                   OR LOWER(supplier_code) LIKE ?
+                   OR LOWER(document_description) LIKE ?
+                   OR LOWER(supplier_name) LIKE ?
+                ORDER BY filename
+                LIMIT 15
+            ''', (f'%{query_lower}%', f'%{query_lower}%', f'%{query_lower}%', f'%{query_lower}%'))
+            rows = cursor.fetchall()
+
+        for row in rows:
+            fn = (row['filename'] or '').lower()
+            sc = (row['supplier_code'] or '').lower()
+            desc = (row['document_description'] or '').lower()
+            sn = (row['supplier_name'] or '').lower()
+            if fn.startswith(query_lower):
+                score, match_field = 100, 'filename'
+            elif query_lower in fn:
+                score, match_field = 50, 'filename'
+            elif sc.startswith(query_lower):
+                score, match_field = 60, 'supplier_code'
+            elif query_lower in sc:
+                score, match_field = 30, 'supplier_code'
+            elif query_lower in desc:
+                score, match_field = 40, 'description'
+            elif query_lower in sn:
+                score, match_field = 35, 'supplier_name'
+            else:
+                score, match_field = 10, 'filename'
+            pdf_matches.append({
+                'filename': row['filename'],
+                'document_description': row['document_description'] or '',
+                'supplier_code': row['supplier_code'] or '',
+                'supplier_name': row['supplier_name'] or '',
+                'score': score,
+                'match_field': match_field
+            })
+
         pdf_matches.sort(key=lambda x: (-x['score'], x['filename']))
-        
         suggestions = [{
             'tag_name': p['filename'],
             'tag_type': 'pdf',
@@ -632,11 +622,8 @@ def api_cables_server_side():
 @app.route('/api/documents')
 @login_required
 def api_documents():
-    """Get all documents/PDFs for DataTables, including non-indexed ones from metadata."""
+    """Get all documents/PDFs for DataTables."""
     db = get_db()
-    
-    # Get all documents from DB
-    indexed_docs = {}
     with db._get_connection() as conn:
         cursor = conn.execute('''
             SELECT
@@ -658,57 +645,23 @@ def api_documents():
             FROM documents p
             ORDER BY p.filename
         ''')
+        return jsonify({'data': [dict(row) for row in cursor.fetchall()]})
 
-        for row in cursor.fetchall():
-            doc = dict(row)
-            key = doc['filename'].lower()
-            indexed_docs[key] = doc
 
-    documents = []
-
-    # Process all documents from metadata (includes non-indexed)
-    for key, meta in drawing_metadata.items():
-        if key in indexed_docs:
-            doc = indexed_docs[key]
-            # Fall back to metadata if DB columns are empty
-            if not doc.get('supplier_code'):
-                doc['supplier_code'] = meta.get('supplier_code', '')
-            if not doc.get('supplier_name'):
-                doc['supplier_name'] = meta.get('supplier_name', '')
-            if not doc.get('supergrandparent'):
-                doc['supergrandparent'] = meta.get('supergrandparent', '')
-            if not doc.get('superparent'):
-                doc['superparent'] = meta.get('superparent', '')
-            if not doc.get('revision'):
-                doc['revision'] = meta.get('revision', '')
-            if not doc.get('status'):
-                doc['status'] = meta.get('status', '')
-        else:
-            # Document in metadata but not yet in DB
-            doc = {
-                'pdf_id': None,
-                'filename': meta.get('filename', ''),
-                'relative_path': meta.get('relative_path_unix', ''),
-                'document_description': meta.get('document_description', ''),
-                'page_count': None,
-                'to_be_indexed': False,
-                'indexed': False,
-                'tag_count': 0,
-                'supplier_code': meta.get('supplier_code', ''),
-                'supplier_name': meta.get('supplier_name', ''),
-                'supergrandparent': meta.get('supergrandparent', ''),
-                'superparent': meta.get('superparent', ''),
-                'revision': meta.get('revision', ''),
-                'status': meta.get('status', ''),
-            }
-        documents.append(doc)
-
-    # Also add DB documents not in metadata
-    for key, doc in indexed_docs.items():
-        if key not in drawing_metadata:
-            documents.append(doc)
-
-    return jsonify({'data': documents})
+@app.route('/api/documents/<int:pdf_id>/index-flag', methods=['PATCH'])
+@admin_required
+def api_document_index_flag(pdf_id):
+    data = request.get_json()
+    if data is None or 'to_be_indexed' not in data:
+        return jsonify({'error': 'Missing to_be_indexed field'}), 400
+    to_be_indexed = bool(data['to_be_indexed'])
+    db = get_db()
+    with db._get_connection() as conn:
+        conn.execute(
+            'UPDATE documents SET to_be_indexed = ? WHERE pdf_id = ?',
+            (to_be_indexed, pdf_id)
+        )
+    return jsonify({'success': True})
 
 
 @app.route('/api/pdf/<int:pdf_id>/tags')
@@ -734,38 +687,8 @@ def api_pdf_tags(pdf_id):
 def api_search_pdf(query):
     """Search for a PDF by filename, description, supplier_code, or supplier_name."""
     db = get_db()
-    
-    # First try to find in metadata (includes non-indexed PDFs)
-    query_lower = query.lower()
-    found_meta = None
-    
-    for key, meta in drawing_metadata.items():
-        # Exact filename match
-        if key == query_lower or meta.get('filename', '').lower() == query_lower:
-            found_meta = meta
-            break
-        # Check supplier_code
-        if meta.get('supplier_code') and meta['supplier_code'].lower() == query_lower:
-            found_meta = meta
-            break
-    
-    # If no exact match, try partial matches
-    if not found_meta:
-        for key, meta in drawing_metadata.items():
-            if query_lower in key:
-                found_meta = meta
-                break
-            if meta.get('supplier_code') and query_lower in meta['supplier_code'].lower():
-                found_meta = meta
-                break
-            if meta.get('document_description') and query_lower in meta['document_description'].lower():
-                found_meta = meta
-                break
-            if meta.get('supplier_name') and query_lower in meta['supplier_name'].lower():
-                found_meta = meta
-                break
-    
-    # Try to find the PDF in database
+
+    # Find the PDF in database
     pdf_info = None
     pdf_id = None
     
@@ -789,20 +712,7 @@ def api_search_pdf(query):
         if row:
             pdf_info = dict(row)
             pdf_id = pdf_info['pdf_id']
-        elif found_meta:
-            # PDF exists in metadata but not yet in DB
-            pdf_info = {
-                'pdf_id': None,
-                'filename': found_meta.get('filename', ''),
-                'relative_path': found_meta.get('relative_path_unix', ''),
-                'document_description': found_meta.get('document_description', ''),
-                'supplier_code': found_meta.get('supplier_code', ''),
-                'supplier_name': found_meta.get('supplier_name', ''),
-                'page_count': None,
-                'to_be_indexed': False,
-                'date_indexed': None,
-            }
-        
+
         if not pdf_info:
             return jsonify({
                 'found': False,
@@ -812,16 +722,8 @@ def api_search_pdf(query):
                 'equipment': []
             })
         
-        # Get metadata enrichment
-        key = pdf_info['filename'].lower()
-        if key in drawing_metadata:
-            meta = drawing_metadata[key]
-            pdf_info['category'] = meta.get('supergrandparent', '')
-            pdf_info['subcategory'] = meta.get('superparent', '')
-            if not pdf_info.get('supplier_code'):
-                pdf_info['supplier_code'] = meta.get('supplier_code', '')
-            if not pdf_info.get('supplier_name'):
-                pdf_info['supplier_name'] = meta.get('supplier_name', '')
+        pdf_info['category'] = pdf_info.get('supergrandparent', '')
+        pdf_info['subcategory'] = pdf_info.get('superparent', '')
         
         cables = []
         equipment = []
@@ -982,7 +884,7 @@ def api_config():
     return jsonify({
         'pdf_root_configured': bool(PDF_ROOT),
         'has_compartments': stats.get('compartments', 0) > 0,
-        'has_metadata': bool(drawing_metadata)
+        'has_metadata': True
     })
 
 
@@ -994,14 +896,13 @@ def api_data_version():
     stats = db.get_stats()
     
     # Create a version hash based on data counts
-    version_string = f"{stats['cables']}_{stats['equipment']}_{stats['documents']}_{stats['equipment_occurrences']}_{stats['cable_occurrences']}_{len(drawing_metadata)}"
+    version_string = f"{stats['cables']}_{stats['equipment']}_{stats['documents']}_{stats['equipment_occurrences']}_{stats['cable_occurrences']}_{stats['documents_to_index']}"
     import hashlib
     version_hash = hashlib.md5(version_string.encode()).hexdigest()[:12]
     
     return jsonify({
         'version': version_hash,
-        'stats': stats,
-        'metadata_count': len(drawing_metadata)
+        'stats': stats
     })
 
 
@@ -1013,7 +914,6 @@ if __name__ == '__main__':
     parser.add_argument('--host', '-H', default='127.0.0.1', help='Host to bind to')
     parser.add_argument('--db', default='data/equipment_explorer.db', help='Path to database')
     parser.add_argument('--pdf-root', help='Root directory for PDF files')
-    parser.add_argument('--metadata', default='drawing_metadata.pkl', help='Path to metadata pickle')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
     args = parser.parse_args()
@@ -1022,13 +922,11 @@ if __name__ == '__main__':
     DB_PATH = args.db
     if args.pdf_root:
         PDF_ROOT = args.pdf_root
-    METADATA_PATH = args.metadata
 
     # Reload data with new paths
     db = None
     auth_manager = None
-    load_metadata()
-    
+
     # Initialize auth (creates default admin if needed)
     get_auth()
     
@@ -1037,7 +935,7 @@ if __name__ == '__main__':
     print(f"{'='*60}")
     print(f"Database: {DB_PATH}")
     print(f"PDF Root: {PDF_ROOT or '(not configured)'}")
-    print(f"Metadata: {METADATA_PATH} ({len(drawing_metadata)} entries)")
+
     print(f"{'='*60}")
     print(f"Starting server at http://{args.host}:{args.port}")
     print(f"Default admin login: admin / admin")
