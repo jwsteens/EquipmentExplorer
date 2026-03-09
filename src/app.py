@@ -16,15 +16,21 @@ from auth import AuthManager, login_required, admin_required, editor_required, S
 from admin_routes import admin_bp
 
 from dotenv import load_dotenv
-load_dotenv()
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
+
+def _abs(raw: str) -> str:
+    p = Path(raw)
+    return str(p if p.is_absolute() else _PROJECT_ROOT / p)
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
-# Configuration
-DB_PATH = os.environ.get('DB_PATH', 'data/equipment_explorer.db')
-PDF_ROOT = os.environ.get('DOCUMENTS_PATH', 'data/documents')
-METADATA_PATH = os.environ.get('METADATA_PATH', 'drawing_metadata.pkl')
+# Configuration — always absolute so send_file and ShipCableDB work regardless of CWD
+DB_PATH = _abs(os.environ.get('DB_PATH', 'data/equipment_explorer.db'))
+PDF_ROOT = _abs(os.environ.get('DOCUMENTS_PATH', 'data/documents'))
+METADATA_PATH = _abs(os.environ.get('METADATA_PATH', 'drawing_metadata.pkl'))
 # Initialize database and auth
 db = None
 auth_manager = None

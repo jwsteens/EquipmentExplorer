@@ -1,11 +1,17 @@
 import glob
 import os
 import readline
+from pathlib import Path
 
 import click
 from dotenv import load_dotenv
 
-load_dotenv()
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
+
+def _abs(raw: str) -> str:
+    p = Path(raw)
+    return str(p if p.is_absolute() else _PROJECT_ROOT / p)
 
 from setup.db import get_connection, init_db
 from setup.import_equipment_and_cables import import_equipment_and_cables
@@ -13,7 +19,7 @@ from setup.import_compartments import import_compartments
 from setup.import_documents import import_documents
 from setup.import_metadata import import_metadata
 
-DB_PATH = os.getenv("DB_PATH", "data/equipment_explorer.db")
+DB_PATH = _abs(os.getenv("DB_PATH", "data/equipment_explorer.db"))
 
 _SEP = "=" * 60
 
