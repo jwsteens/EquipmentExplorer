@@ -2,6 +2,12 @@
 
 {% block title %}Documents - Equipment Explorer{% endblock %}
 
+{% block head %}
+<style>
+    .main-content { max-width: 1800px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
     <div class="page-title">
@@ -18,7 +24,8 @@
                 <tr>
                     <th>Filename</th>
                     <th>Description</th>
-                    <th>Category</th>
+                    <th>Supergrandparent</th>
+                    <th>Superparent</th>
                     <th>Supplier Code</th>
                     <th>Supplier Name</th>
                     <th>Pages</th>
@@ -278,11 +285,22 @@ function initializeTable(data) {
                 data: 'supergrandparent',
                 render: function(data, type, row) {
                     if (!data) return '-';
-                    const sub = row.superparent;
+                    const sub = row.supergrandparent;
                     if (type === 'display') {
                         return `<span class="text-muted" style="font-size: 0.8rem;" title="${escapeHtml(sub || '')}">${escapeHtml(data)}</span>`;
                     }
                     return data + ' ' + (sub || '');
+                }
+            },
+            {
+                data: 'superparent',
+                render: function(data, type, row) {
+                    if (!data) return '-';
+                    const parent = row.superparent;
+                    if (type === 'display') {
+                        return `<span class="text-muted" style="font-size: 0.8rem;" title="${escapeHtml(parent || '')}">${escapeHtml(data)}</span>`;
+                    }
+                    return data + ' ' + (parent || '');
                 }
             },
             { 

@@ -4,6 +4,6 @@ To be fixed on the front-end:
 - [ ] Sessions are not saved when app is restarted.
 - [ ] Admin should be able to end user sessions.
 - [ ] Admin dashboard needs a revamp.
-- [ ] Documents page should show supergrandparent and superparent separately.
-- [ ] Cable list should show narrower rows.
+- [x] Documents page should show supergrandparent and superparent separately.
+- [x] Cable list should show narrower rows.
 - [ ] Index dashboard needs a revamp.

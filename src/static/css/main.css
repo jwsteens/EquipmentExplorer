@@ -1081,6 +1081,7 @@ h4 { font-size: 1.125rem; }
 
 .dataTables_wrapper {
     font-size: 0.875rem;
+    overflow-x: auto;
 }
 
 .dataTables_filter input {
@@ -1132,8 +1133,20 @@ table.dataTable tbody td {
 }
 
 table.dataTable tbody tr {
-    background: var(--bg-secondary) !important;
     transition: background var(--transition-fast) !important;
+}
+
+table.dataTable tbody tr.odd {
+    background: var(--bg-secondary) !important;
+}
+
+table.dataTable tbody tr.even {
+    background: var(--bg-tertiary) !important;
+}
+
+table.dataTable tbody tr.odd td.sorting_1,
+table.dataTable tbody tr.even td.sorting_1 {
+    background: inherit !important;
 }
 
 table.dataTable tbody tr:hover {

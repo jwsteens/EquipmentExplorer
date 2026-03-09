@@ -2,6 +2,12 @@
 
 {% block title %}Cables - Equipment Explorer{% endblock %}
 
+{% block head %}
+<style>
+    .main-content { max-width: 1800px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <style>
 /* Column group dividers */
@@ -328,28 +334,8 @@ function initializeTable(data) {
             { 
                 data: 'start_room',
                 render: function(data, type, row) {
-                    const room = row.start_room;
                     const roomDesc = row.start_room_description;
-                    const deck = row.start_deck;
-                    
-                    if (type !== 'display') {
-                        return `${room || ''} ${roomDesc || ''} ${deck || ''}`;
-                    }
-                    
-                    if (!room && !deck) return '-';
-                    
-                    let parts = [];
-                    if (room) {
-                        parts.push(`<span title="${escapeHtml(roomDesc || '')}">📍 ${escapeHtml(String(room))}</span>`);
-                    }
-                    if (roomDesc) {
-                        parts.push(`<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(roomDesc)}</span>`);
-                    }
-                    if (deck) {
-                        parts.push(`<span class="text-muted" style="font-size:0.75rem;">🚢 ${escapeHtml(deck)}</span>`);
-                    }
-                    
-                    return `<div style="display:flex;flex-direction:column;gap:2px;font-size:0.85rem;">${parts.join('')}</div>`;
+                    return roomDesc ? escapeHtml(roomDesc) : '-';
                 }
             },
             { 
@@ -370,28 +356,8 @@ function initializeTable(data) {
             { 
                 data: 'dest_room',
                 render: function(data, type, row) {
-                    const room = row.dest_room;
                     const roomDesc = row.dest_room_description;
-                    const deck = row.dest_deck;
-                    
-                    if (type !== 'display') {
-                        return `${room || ''} ${roomDesc || ''} ${deck || ''}`;
-                    }
-                    
-                    if (!room && !deck) return '-';
-                    
-                    let parts = [];
-                    if (room) {
-                        parts.push(`<span title="${escapeHtml(roomDesc || '')}">📍 ${escapeHtml(String(room))}</span>`);
-                    }
-                    if (roomDesc) {
-                        parts.push(`<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(roomDesc)}</span>`);
-                    }
-                    if (deck) {
-                        parts.push(`<span class="text-muted" style="font-size:0.75rem;">🚢 ${escapeHtml(deck)}</span>`);
-                    }
-                    
-                    return `<div style="display:flex;flex-direction:column;gap:2px;font-size:0.85rem;">${parts.join('')}</div>`;
+                    return roomDesc ? escapeHtml(roomDesc) : '-';
                 }
             },
             {
