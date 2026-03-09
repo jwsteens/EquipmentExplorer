@@ -1739,6 +1739,94 @@ table.dataTable tbody tr.selected {
     border-color: var(--accent-primary);
 }
 
+/* ============================================================================
+   PARTIAL MATCH RESULTS
+   ============================================================================ */
+
+.partial-results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-md);
+}
+
+.partial-results-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.partial-results-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.partial-result-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    padding: var(--space-md) var(--space-lg);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.partial-result-item:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-tertiary);
+}
+
+.partial-result-icon {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.partial-result-icon.cable {
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--accent-cable);
+}
+
+.partial-result-icon.equipment {
+    background: rgba(6, 182, 212, 0.15);
+    color: var(--accent-equipment);
+}
+
+.partial-result-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.partial-result-name {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.partial-result-desc {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.partial-result-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+}
+
 .pin-btn.pinned:hover {
     background: rgba(239, 68, 68, 0.15);
     color: var(--accent-danger);

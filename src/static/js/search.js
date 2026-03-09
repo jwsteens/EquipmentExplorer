@@ -15,7 +15,6 @@ const emptyState = document.getElementById('emptyState');
 const loadingState = document.getElementById('loadingState');
 const resultsContent = document.getElementById('resultsContent');
 const filterButtons = document.querySelectorAll('.filter-btn');
-const partialSearchCheckbox = document.getElementById('partialSearch');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
@@ -223,24 +222,23 @@ async function performSearch(query) {
     loadingState.classList.remove('hidden');
     
     try {
-        const isPartial = partialSearchCheckbox.checked;
-        
         // PDF search
         if (currentFilter === 'pdf') {
             const response = await fetch(`/api/search/pdf/${encodeURIComponent(query)}`);
             const data = await response.json();
             renderPdfSearchResults(data);
-        } else if (isPartial) {
-            // Partial search
-            const typeParam = currentFilter !== 'all' ? `&type=${currentFilter}` : '';
-            const response = await fetch(`/api/search/partial/${encodeURIComponent(query)}?${typeParam}`);
-            const data = await response.json();
-            renderPartialResults(data);
         } else {
-            // Exact search
-            const response = await fetch(`/api/search/tag/${encodeURIComponent(query)}`);
-            const data = await response.json();
-            renderExactResults(data);
+            // Try exact match first; fall back to partial if not found
+            const exactResponse = await fetch(`/api/search/tag/${encodeURIComponent(query)}`);
+            const exactData = await exactResponse.json();
+            if (exactData.found) {
+                renderExactResults(exactData);
+            } else {
+                const typeParam = currentFilter !== 'all' ? `?type=${currentFilter}` : '';
+                const partialResponse = await fetch(`/api/search/partial/${encodeURIComponent(query)}${typeParam}`);
+                const partialData = await partialResponse.json();
+                renderPartialResults(partialData);
+            }
         }
     } catch (error) {
         console.error('Search error:', error);
@@ -270,8 +268,8 @@ function renderExactResults(data) {
                     <circle cx="11" cy="11" r="8"/>
                     <path d="m21 21-4.35-4.35"/>
                 </svg>
-                <p>No exact match found for "${escapeHtml(data.tag_name)}"</p>
-                <p class="text-muted">Try enabling "Partial match" or check your spelling</p>
+                <p>No match found for "${escapeHtml(data.tag_name)}"</p>
+                <p class="text-muted">Check your spelling or try a different term</p>
             </div>
         `;
         return;
@@ -617,12 +615,12 @@ function renderPartialResults(data) {
             <div class="partial-result-item" onclick="searchTag('${escapeHtml(result.tag_name)}')">
                 <div class="partial-result-icon ${result.tag_type}">
                     ${result.tag_type === 'cable' ? `
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M4 9h16"/>
                             <path d="M4 15h16"/>
                         </svg>
                     ` : `
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="4" y="4" width="16" height="16" rx="2"/>
                             <circle cx="12" cy="12" r="4"/>
                         </svg>
