@@ -1,5 +1,7 @@
+import glob
 import hashlib
 import os
+import readline
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -24,11 +26,25 @@ def _md5(path: Path) -> str:
 def import_documents(conn: sqlite3.Connection) -> None:
     """Scan a documents directory and register PDFs in the database."""
 
+    def _path_completer(text, state):
+        matches = glob.glob(os.path.expanduser(text) + "*")
+        matches = [m + os.sep if os.path.isdir(m) else m for m in matches]
+        return matches[state] if state < len(matches) else None
+
+    def prompt_path(message, **kwargs):
+        readline.set_completer(_path_completer)
+        readline.set_completer_delims(" \t\n")
+        readline.parse_and_bind("tab: complete")
+        try:
+            return click.prompt(message, **kwargs)
+        finally:
+            readline.set_completer(None)
+
     existing = os.getenv("DOCUMENTS_PATH")
     if existing:
-        documents_dir = click.prompt("  Documents directory", default=existing)
+        documents_dir = prompt_path("  Documents directory", default=existing)
     else:
-        documents_dir = click.prompt("  Documents directory")
+        documents_dir = prompt_path("  Documents directory")
 
     set_key(str(_ENV_PATH), "DOCUMENTS_PATH", documents_dir)
 
