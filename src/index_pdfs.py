@@ -182,7 +182,6 @@ def _process_pdf_worker(pdf_path_str: str) -> dict:
         'pdf_path': pdf_path_str,
         'path': relative_path,
         'filename': filename,
-        'drawing_number': supplier_code,
         'supplier_code': supplier_code,
         'supplier_name': supplier_name,
         'document_description': document_description,
@@ -192,7 +191,8 @@ def _process_pdf_worker(pdf_path_str: str) -> dict:
         'tags_found': 0,
         'cables_found': 0,
         'equipment_found': 0,
-        'occurrences': [],  # List of (tag_id, page_num) tuples
+        'equipment_occurrences': [],  # List of (equipment_id, page_num) tuples
+        'cable_occurrences': [],      # List of (cable_id, page_num) tuples
         'error': None
     }
     
@@ -236,23 +236,26 @@ def _process_pdf_worker(pdf_path_str: str) -> dict:
         
         doc.close()
         
-        # Build occurrences list
-        occurrences = []
+        # Build occurrences lists (split by type)
+        equipment_occurrences = []
+        cable_occurrences = []
         cables_found = 0
         equipment_found = 0
-        
+
         for tag, page_numbers in all_found_tags.items():
             tag_id = _worker_tag_id_map.get(tag)
             if tag_id:
-                for page_num in page_numbers:
-                    occurrences.append((tag_id, page_num))
-                
                 if tag in _worker_cable_tags:
+                    for page_num in page_numbers:
+                        cable_occurrences.append((tag_id, page_num))
                     cables_found += 1
                 else:
+                    for page_num in page_numbers:
+                        equipment_occurrences.append((tag_id, page_num))
                     equipment_found += 1
-        
-        result['occurrences'] = occurrences
+
+        result['equipment_occurrences'] = equipment_occurrences
+        result['cable_occurrences'] = cable_occurrences
         result['tags_found'] = len(all_found_tags)
         result['cables_found'] = cables_found
         result['equipment_found'] = equipment_found
@@ -296,17 +299,19 @@ class PDFIndexer:
         
         # Load all tags into memory for fast lookup
         print("Loading tags from database...")
-        self.cable_tags = db.get_tag_names_set('cable')
-        self.equipment_tags = db.get_tag_names_set('equipment')
+        self.cable_tags = db.get_cable_tags_set()
+        self.equipment_tags = db.get_equipment_tags_set()
         self.all_tags = self.cable_tags | self.equipment_tags
-        
+
         print(f"Loaded {len(self.cable_tags)} cable tags")
         print(f"Loaded {len(self.equipment_tags)} equipment tags")
-        
-        # Build tag lookup dict (tag_name -> tag_id)
+
+        # Build tag lookup dict (tag -> equipment_id or cable_id)
         self.tag_id_map = {}
-        for tag in self.db.get_all_tags():
-            self.tag_id_map[tag['tag_name']] = tag['tag_id']
+        for eq in self.db.get_all_equipment():
+            self.tag_id_map[eq['tag']] = eq['equipment_id']
+        for cab in self.db.get_all_cables():
+            self.tag_id_map[cab['tag']] = cab['cable_id']
         
         # Build regex pattern for efficient tag detection (for single-file mode)
         escaped_tags = [re.escape(tag) for tag in sorted(self.all_tags, key=len, reverse=True)]
@@ -471,7 +476,6 @@ class PDFIndexer:
         result = {
             'path': relative_path,
             'filename': filename,
-            'drawing_number': supplier_code,
             'supplier_code': supplier_code,
             'supplier_name': supplier_name,
             'document_description': document_description,
@@ -482,57 +486,61 @@ class PDFIndexer:
             'equipment_found': 0,
             'error': None
         }
-        
+
         try:
             is_searchable, page_count, _ = self.check_pdf_searchable(pdf_path)
             result['searchable'] = is_searchable
             result['page_count'] = page_count
-            
+
             file_size = pdf_path.stat().st_size
-            pdf_id = self.db.add_pdf(
+            pdf_id = self.db.add_document(
                 filename=filename,
                 relative_path=relative_path,
                 file_size_bytes=file_size,
                 page_count=page_count,
-                is_searchable=is_searchable,
+                to_be_indexed=True,
                 document_description=document_description,
-                drawing_number=supplier_code,
                 supplier_code=supplier_code,
                 supplier_name=supplier_name
             )
-            
+
             self.db.delete_occurrences_for_pdf(pdf_id)
-            
+
             if not is_searchable:
                 return result
-            
+
             pages = self.extract_text_from_pdf(pdf_path)
             all_found_tags = {}
-            
+
             for page_num, text in pages:
                 tags = self.find_tags_in_text(text)
                 for tag in tags:
                     if tag not in all_found_tags:
                         all_found_tags[tag] = set()
                     all_found_tags[tag].add(page_num)
-            
-            occurrences = []
+
+            equip_occurrences = []
+            cable_occurrences = []
             for tag, page_numbers in all_found_tags.items():
                 tag_id = self.tag_id_map.get(tag)
                 if tag_id:
-                    for page_num in page_numbers:
-                        occurrences.append((tag_id, pdf_id, page_num, 1.0))
-                    
                     if tag in self.cable_tags:
+                        for page_num in page_numbers:
+                            cable_occurrences.append((tag_id, pdf_id, page_num, 1.0))
                         result['cables_found'] += 1
                     else:
+                        for page_num in page_numbers:
+                            equip_occurrences.append((tag_id, pdf_id, page_num))
                         result['equipment_found'] += 1
-            
-            if occurrences:
-                self.db.add_occurrences_bulk(occurrences)
-            
+
+            if equip_occurrences:
+                self.db.add_equipment_occurrences_bulk(equip_occurrences)
+            if cable_occurrences:
+                self.db.add_cable_occurrences_bulk(cable_occurrences)
+
+            self.db.mark_document_indexed(pdf_id)
             result['tags_found'] = len(all_found_tags)
-            
+
         except Exception as e:
             result['error'] = str(e)
         
@@ -543,27 +551,31 @@ class PDFIndexer:
         Write a worker result to the database.
         Returns the pdf_id.
         """
-        pdf_id = self.db.add_pdf(
+        pdf_id = self.db.add_document(
             filename=result['filename'],
             relative_path=result['path'],
             file_size_bytes=result['file_size'],
             page_count=result['page_count'],
-            is_searchable=result['searchable'],
+            to_be_indexed=True,
             document_description=result['document_description'],
-            drawing_number=result['drawing_number'],
             supplier_code=result.get('supplier_code'),
             supplier_name=result.get('supplier_name')
         )
-        
+
         # Delete existing occurrences (for re-indexing)
         self.db.delete_occurrences_for_pdf(pdf_id)
-        
+
         # Add new occurrences
-        if result['occurrences']:
-            occurrences = [(tag_id, pdf_id, page_num, 1.0) 
-                          for tag_id, page_num in result['occurrences']]
-            self.db.add_occurrences_bulk(occurrences)
-        
+        if result['equipment_occurrences']:
+            equip_rows = [(tag_id, pdf_id, page_num)
+                          for tag_id, page_num in result['equipment_occurrences']]
+            self.db.add_equipment_occurrences_bulk(equip_rows)
+        if result['cable_occurrences']:
+            cable_rows = [(tag_id, pdf_id, page_num, 1.0)
+                          for tag_id, page_num in result['cable_occurrences']]
+            self.db.add_cable_occurrences_bulk(cable_rows)
+
+        self.db.mark_document_indexed(pdf_id)
         return pdf_id
     
     def index_all(self, max_workers: int = None, limit: int = None, 
@@ -878,21 +890,21 @@ def print_single_result(result: dict, db: ShipCableDB):
             
             cables = [c for c in contents if c['tag_type'] == 'cable']
             equipment = [c for c in contents if c['tag_type'] == 'equipment']
-            
+
             if cables:
                 print(f"\nCables ({len(cables)}):")
                 for c in cables[:30]:
                     page = f" (page {c['page_number']})" if c['page_number'] else ""
-                    print(f"  â€¢ {c['tag_name']}{page}")
+                    print(f"  \u2022 {c['tag']}{page}")
                 if len(cables) > 30:
                     print(f"  ... and {len(cables) - 30} more")
-            
+
             if equipment:
                 print(f"\nEquipment ({len(equipment)}):")
                 for e in equipment[:30]:
                     page = f" (page {e['page_number']})" if e['page_number'] else ""
                     desc = f" - {e['description']}" if e['description'] else ""
-                    print(f"  â€¢ {e['tag_name']}{page}{desc}")
+                    print(f"  \u2022 {e['tag']}{page}{desc}")
                 if len(equipment) > 30:
                     print(f"  ... and {len(equipment) - 30} more")
     else:
@@ -984,8 +996,8 @@ Performance:
                         help='Directory containing PDF files to index')
     parser.add_argument('--root', '-r', type=str,
                         help='Root directory for relative paths (used with --file)')
-    parser.add_argument('--db', type=str, default='ship_cables.db',
-                        help='Path to SQLite database (default: ship_cables.db)')
+    parser.add_argument('--db', type=str, default='data/equipment_explorer.db',
+                        help='Path to SQLite database (default: data/equipment_explorer.db)')
     parser.add_argument('--metadata', '-m', type=str, default='drawing_metadata.pkl',
                         help='Path to metadata pickle file (default: drawing_metadata.pkl)')
     parser.add_argument('--limit', '-l', type=int,

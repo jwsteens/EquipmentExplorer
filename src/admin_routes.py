@@ -338,10 +338,11 @@ def api_delete_cable(tag_id):
     try:
         # Get cable info before deletion for logging
         with db._get_connection() as conn:
-            cursor = conn.execute('SELECT tag_name FROM tags WHERE tag_id = ?', (tag_id,))
-            row = cursor.fetchone()
+            row = conn.execute('SELECT tag FROM equipment WHERE equipment_id = ?', (tag_id,)).fetchone()
+            if not row:
+                row = conn.execute('SELECT tag FROM cables WHERE cable_id = ?', (tag_id,)).fetchone()
             tag_name = row[0] if row else 'Unknown'
-        
+
         db.delete_tag(tag_id)
         
         auth.log_access(g.user['user_id'], g.user['username'], 'delete_cable',
@@ -365,10 +366,11 @@ def api_delete_equipment(tag_id):
     try:
         # Get equipment info before deletion for logging
         with db._get_connection() as conn:
-            cursor = conn.execute('SELECT tag_name FROM tags WHERE tag_id = ?', (tag_id,))
-            row = cursor.fetchone()
+            row = conn.execute('SELECT tag FROM equipment WHERE equipment_id = ?', (tag_id,)).fetchone()
+            if not row:
+                row = conn.execute('SELECT tag FROM cables WHERE cable_id = ?', (tag_id,)).fetchone()
             tag_name = row[0] if row else 'Unknown'
-        
+
         db.delete_tag(tag_id)
         
         auth.log_access(g.user['user_id'], g.user['username'], 'delete_equipment',

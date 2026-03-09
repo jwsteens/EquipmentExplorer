@@ -13,7 +13,7 @@ from contextlib import contextmanager
 class ShipCableDB:
     """Database manager for the Ship Cable PDF Indexing System."""
 
-    def __init__(self, db_path: str = "ship_cables.db"):
+    def __init__(self, db_path: str = "data/equipment_explorer.db"):
         self.db_path = db_path
         self._init_db()
 
@@ -494,15 +494,37 @@ class ShipCableDB:
             cursor = conn.execute('SELECT COUNT(*) FROM cable_occurrences')
             stats['cable_occurrences'] = cursor.fetchone()[0]
 
+            # Aliases expected by index.html template
+            stats['total_cables'] = stats['cables']
+            stats['total_equipment'] = stats['equipment']
+            stats['total_pdfs'] = stats['documents_indexed']
+            stats['total_occurrences'] = stats['equipment_occurrences'] + stats['cable_occurrences']
+            stats['searchable_pdfs'] = stats['documents_to_index']
+
+            cursor = conn.execute(
+                'SELECT COUNT(DISTINCT equipment_id) FROM equipment_occurrences'
+            )
+            eq_with_occ = cursor.fetchone()[0]
+            cursor = conn.execute(
+                'SELECT COUNT(DISTINCT cable_id) FROM cable_occurrences'
+            )
+            stats['tags_with_occurrences'] = eq_with_occ + cursor.fetchone()[0]
+
+            cursor = conn.execute(
+                'SELECT COUNT(*) FROM cables'
+                ' WHERE start_equipment_id IS NOT NULL AND dest_equipment_id IS NOT NULL'
+            )
+            stats['cable_connections'] = cursor.fetchone()[0]
+
             return stats
 
 
-def init_database(db_path: str = "ship_cables.db") -> ShipCableDB:
+def init_database(db_path: str = "data/equipment_explorer.db") -> ShipCableDB:
     """Initialize and return a database instance."""
     return ShipCableDB(db_path)
 
 
 if __name__ == "__main__":
-    db = ShipCableDB("test_ship_cables.db")
+    db = ShipCableDB("data/equipment_explorer.db")
     print("Database initialized successfully.")
     print("Stats:", db.get_stats())

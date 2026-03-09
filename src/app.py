@@ -22,16 +22,13 @@ app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
 # Configuration
-DB_PATH = os.environ.get('DB_PATH', 'ship_cables.db')
-PDF_ROOT = os.environ.get('PDF_ROOT', '')
+DB_PATH = os.environ.get('DB_PATH', 'data/equipment_explorer.db')
+PDF_ROOT = os.environ.get('DOCUMENTS_PATH', 'data/documents')
 METADATA_PATH = os.environ.get('METADATA_PATH', 'drawing_metadata.pkl')
-COMPARTMENTS_PATH = os.environ.get('COMPARTMENTS_PATH', 'compartments.pkl')
-
 # Initialize database and auth
 db = None
 auth_manager = None
 drawing_metadata = {}
-compartments = {}
 
 
 def get_db():
@@ -59,45 +56,12 @@ def load_metadata():
     return drawing_metadata
 
 
-def load_compartments():
-    """Load compartment data from pickle file."""
-    global compartments
-    if os.path.exists(COMPARTMENTS_PATH):
-        with open(COMPARTMENTS_PATH, 'rb') as f:
-            compartments = pickle.load(f)
-    return compartments
-
-
-def get_compartment_description(room_tag):
-    """Get room description for a room tag."""
-    if not room_tag:
-        return None
-    # Try exact match first
-    if room_tag in compartments:
-        return compartments[room_tag]
-    # Try without leading zeros
-    room_key = str(room_tag).lstrip('0')
-    if room_key in compartments:
-        return compartments[room_key]
-    return None
-
-
-def enrich_with_compartment(data, room_field='room_tag'):
-    """Add compartment description to data dict."""
-    if isinstance(data, dict):
-        room_tag = data.get(room_field)
-        if room_tag:
-            desc = get_compartment_description(str(room_tag).split('.')[0] if room_tag else None)
-            data[f'{room_field}_description'] = desc
-    return data
-
-
 # Load data on startup
 with app.app_context():
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+    get_auth()  # initializes DB schema + auth tables + default admin
     load_metadata()
-    load_compartments()
     print(f"Loaded {len(drawing_metadata)} drawing metadata entries")
-    print(f"Loaded {len(compartments)} compartment entries")
 
 
 # =============================================================================
@@ -342,19 +306,32 @@ def api_search_tag(tag_name):
         # Try to get tag info even without PDF occurrences
         with db._get_connection() as conn:
             cursor = conn.execute(
-                'SELECT tag_name, tag_type, description, room_tag, deck FROM tags WHERE tag_name = ? OR tag_name = ?',
+                'SELECT tag AS tag_name, description, room_tag, deck FROM equipment WHERE tag = ? OR tag = ?',
                 (tag_name, tag_name.upper())
             )
             row = cursor.fetchone()
             if row:
                 tag_info = {
                     'tag_name': row['tag_name'],
-                    'tag_type': row['tag_type'],
+                    'tag_type': 'equipment',
                     'description': row['description'],
                     'room_tag': row['room_tag'],
                     'deck': row['deck']
                 }
                 search_tag = row['tag_name']
+            else:
+                cursor = conn.execute(
+                    'SELECT tag AS tag_name, type AS description FROM cables WHERE tag = ? OR tag = ?',
+                    (tag_name, tag_name.upper())
+                )
+                row = cursor.fetchone()
+                if row:
+                    tag_info = {
+                        'tag_name': row['tag_name'],
+                        'tag_type': 'cable',
+                        'description': row['description'],
+                    }
+                    search_tag = row['tag_name']
     
     if not tag_info:
         return jsonify({
@@ -374,18 +351,14 @@ def api_search_tag(tag_name):
     if tag_info['tag_type'] == 'cable':
         connection = db.get_cable_connection(tag_info['tag_name'])
         if connection:
-            # Enrich with compartment descriptions
-            connection['start_room_description'] = get_compartment_description(
-                str(connection.get('start_room', '')).split('.')[0] if connection.get('start_room') else None
-            )
-            connection['dest_room_description'] = get_compartment_description(
-                str(connection.get('dest_room', '')).split('.')[0] if connection.get('dest_room') else None
-            )
+            # Compartment descriptions already in view; also expose under legacy keys
+            connection['start_room_description'] = connection.get('start_compartment_description')
+            connection['dest_room_description'] = connection.get('dest_compartment_description')
     else:
         # Get equipment location info
         with db._get_connection() as conn:
             cursor = conn.execute(
-                'SELECT room_tag, deck FROM tags WHERE tag_name = ?',
+                'SELECT room_tag, deck FROM equipment WHERE tag = ?',
                 (tag_info['tag_name'],)
             )
             row = cursor.fetchone()
@@ -393,18 +366,14 @@ def api_search_tag(tag_name):
                 room_tag = str(row['room_tag']).split('.')[0] if row['room_tag'] else None
                 equipment_location = {
                     'room_tag': row['room_tag'],
-                    'room_description': get_compartment_description(room_tag),
+                    'room_description': db.get_compartment_description(room_tag),
                     'deck': row['deck']
                 }
-        
+
         connected_cables = db.get_cables_for_equipment(tag_info['tag_name'])
         for cable in connected_cables:
-            cable['start_room_description'] = get_compartment_description(
-                str(cable.get('start_room', '')).split('.')[0] if cable.get('start_room') else None
-            )
-            cable['dest_room_description'] = get_compartment_description(
-                str(cable.get('dest_room', '')).split('.')[0] if cable.get('dest_room') else None
-            )
+            cable['start_room_description'] = cable.get('start_compartment_description')
+            cable['dest_room_description'] = cable.get('dest_compartment_description')
     
     # Group results by PDF
     pdfs = {}
@@ -419,7 +388,6 @@ def api_search_tag(tag_name):
                 'filename': r['filename'],
                 'relative_path': path,
                 'document_description': r.get('document_description'),
-                'drawing_number': r.get('drawing_number'),
                 'supplier_code': r.get('supplier_code') or meta.get('supplier_code', ''),
                 'supplier_name': r.get('supplier_name') or meta.get('supplier_name', ''),
                 'pages': []
@@ -542,37 +510,23 @@ def api_cables():
     
     with db._get_connection() as conn:
         cursor = conn.execute('''
-            SELECT 
-                c.tag_name AS cable_no,
-                c.description AS cable_type,
-                s.tag_name AS start_tag,
-                s.description AS start_description,
-                s.room_tag AS start_room,
-                s.deck AS start_deck,
-                d.tag_name AS dest_tag,
-                d.description AS dest_description,
-                d.room_tag AS dest_room,
-                d.deck AS dest_deck
-            FROM cable_connections cc
-            JOIN tags c ON cc.cable_tag_id = c.tag_id
-            JOIN tags s ON cc.start_equipment_tag_id = s.tag_id
-            JOIN tags d ON cc.dest_equipment_tag_id = d.tag_id
-            ORDER BY c.tag_name
+            SELECT
+                cable_tag AS cable_no,
+                cable_type,
+                start_equipment_tag AS start_tag,
+                start_equipment_description AS start_description,
+                start_room_tag AS start_room,
+                start_deck,
+                dest_equipment_tag AS dest_tag,
+                dest_equipment_description AS dest_description,
+                dest_room_tag AS dest_room,
+                dest_deck,
+                start_compartment_description AS start_room_description,
+                dest_compartment_description AS dest_room_description
+            FROM cable_connections_view
+            ORDER BY cable_tag
         ''')
-        
-        cables = []
-        for row in cursor.fetchall():
-            cable = dict(row)
-            # Add compartment descriptions
-            cable['start_room_description'] = get_compartment_description(
-                str(cable.get('start_room', '')).split('.')[0] if cable.get('start_room') else None
-            )
-            cable['dest_room_description'] = get_compartment_description(
-                str(cable.get('dest_room', '')).split('.')[0] if cable.get('dest_room') else None
-            )
-            cables.append(cable)
-        
-        return jsonify({'data': cables})
+        return jsonify({'data': [dict(row) for row in cursor.fetchall()]})
 
 
 @app.route('/api/cables/server-side')
@@ -594,98 +548,78 @@ def api_cables_server_side():
     order_column_idx = request.args.get('order[0][column]', type=int, default=0)
     order_dir = request.args.get('order[0][dir]', 'asc')
     
-    # Map column index to database column
+    # Map column index to view column
     column_map = {
-        0: 'c.tag_name',      # cable_no
-        1: 'c.description',   # cable_type
-        2: 's.tag_name',      # start_tag
-        3: 's.description',   # start_description
-        4: 's.room_tag',      # start_location (room)
-        5: 'd.tag_name',      # dest_tag
-        6: 'd.description',   # dest_description
-        7: 'd.room_tag',      # dest_location (room)
+        0: 'cable_tag',
+        1: 'cable_type',
+        2: 'start_equipment_tag',
+        3: 'start_equipment_description',
+        4: 'start_room_tag',
+        5: 'dest_equipment_tag',
+        6: 'dest_equipment_description',
+        7: 'dest_room_tag',
     }
-    
-    order_column = column_map.get(order_column_idx, 'c.tag_name')
+
+    order_column = column_map.get(order_column_idx, 'cable_tag')
     order_direction = 'DESC' if order_dir == 'desc' else 'ASC'
-    
+
     with db._get_connection() as conn:
-        # Base query
-        base_query = '''
-            FROM cable_connections cc
-            JOIN tags c ON cc.cable_tag_id = c.tag_id
-            JOIN tags s ON cc.start_equipment_tag_id = s.tag_id
-            JOIN tags d ON cc.dest_equipment_tag_id = d.tag_id
-        '''
-        
-        # Search filter
+        base_query = 'FROM cable_connections_view'
+
         search_clause = ''
         search_params = []
         if search_value:
             search_clause = '''
-                WHERE c.tag_name LIKE ? 
-                   OR c.description LIKE ?
-                   OR s.tag_name LIKE ? 
-                   OR s.description LIKE ?
-                   OR s.room_tag LIKE ?
-                   OR s.deck LIKE ?
-                   OR d.tag_name LIKE ? 
-                   OR d.description LIKE ?
-                   OR d.room_tag LIKE ?
-                   OR d.deck LIKE ?
+                WHERE cable_tag LIKE ?
+                   OR cable_type LIKE ?
+                   OR start_equipment_tag LIKE ?
+                   OR start_equipment_description LIKE ?
+                   OR start_room_tag LIKE ?
+                   OR start_deck LIKE ?
+                   OR dest_equipment_tag LIKE ?
+                   OR dest_equipment_description LIKE ?
+                   OR dest_room_tag LIKE ?
+                   OR dest_deck LIKE ?
             '''
             search_pattern = f'%{search_value}%'
             search_params = [search_pattern] * 10
-        
-        # Get total count (unfiltered)
+
         cursor = conn.execute(f'SELECT COUNT(*) {base_query}')
         total_records = cursor.fetchone()[0]
-        
-        # Get filtered count
+
         cursor = conn.execute(
             f'SELECT COUNT(*) {base_query} {search_clause}',
             search_params
         )
         filtered_records = cursor.fetchone()[0]
-        
-        # Get paginated data
+
         data_query = f'''
-            SELECT 
-                c.tag_name AS cable_no,
-                c.description AS cable_type,
-                s.tag_name AS start_tag,
-                s.description AS start_description,
-                s.room_tag AS start_room,
-                s.deck AS start_deck,
-                d.tag_name AS dest_tag,
-                d.description AS dest_description,
-                d.room_tag AS dest_room,
-                d.deck AS dest_deck
+            SELECT
+                cable_tag AS cable_no,
+                cable_type,
+                start_equipment_tag AS start_tag,
+                start_equipment_description AS start_description,
+                start_room_tag AS start_room,
+                start_deck,
+                dest_equipment_tag AS dest_tag,
+                dest_equipment_description AS dest_description,
+                dest_room_tag AS dest_room,
+                dest_deck,
+                start_compartment_description AS start_room_description,
+                dest_compartment_description AS dest_room_description
             {base_query}
             {search_clause}
             ORDER BY {order_column} {order_direction}
             LIMIT ? OFFSET ?
         '''
-        
+
         cursor = conn.execute(data_query, search_params + [length, start])
-        
-        cables = []
-        for row in cursor.fetchall():
-            cable = dict(row)
-            # Add compartment descriptions
-            cable['start_room_description'] = get_compartment_description(
-                str(cable.get('start_room', '')).split('.')[0] if cable.get('start_room') else None
-            )
-            cable['dest_room_description'] = get_compartment_description(
-                str(cable.get('dest_room', '')).split('.')[0] if cable.get('dest_room') else None
-            )
-            cables.append(cable)
-        
+
         return jsonify({
             'draw': draw,
             'recordsTotal': total_records,
             'recordsFiltered': filtered_records,
-            'data': cables
+            'data': [dict(row) for row in cursor.fetchall()]
         })
 
 
@@ -695,84 +629,79 @@ def api_documents():
     """Get all documents/PDFs for DataTables, including non-indexed ones from metadata."""
     db = get_db()
     
-    # First get indexed PDFs
+    # Get all documents from DB
     indexed_docs = {}
     with db._get_connection() as conn:
         cursor = conn.execute('''
-            SELECT 
+            SELECT
                 p.pdf_id,
                 p.filename,
                 p.relative_path,
                 p.document_description,
-                p.drawing_number,
                 p.supplier_code,
                 p.supplier_name,
+                p.supergrandparent,
+                p.superparent,
+                p.revision,
+                p.status,
                 p.page_count,
-                p.is_searchable,
-                p.ocr_processed,
-                (SELECT COUNT(*) FROM tag_occurrences WHERE pdf_id = p.pdf_id) as tag_count
-            FROM pdfs p
+                p.to_be_indexed,
+                (p.date_indexed IS NOT NULL) AS indexed,
+                (SELECT COUNT(*) FROM equipment_occurrences WHERE pdf_id = p.pdf_id)
+                + (SELECT COUNT(*) FROM cable_occurrences WHERE pdf_id = p.pdf_id) AS tag_count
+            FROM documents p
             ORDER BY p.filename
         ''')
-        
+
         for row in cursor.fetchall():
             doc = dict(row)
             key = doc['filename'].lower()
             indexed_docs[key] = doc
-    
+
     documents = []
-    
+
     # Process all documents from metadata (includes non-indexed)
     for key, meta in drawing_metadata.items():
         if key in indexed_docs:
-            # Use indexed data but enrich with metadata
             doc = indexed_docs[key]
-            doc['category'] = meta.get('supergrandparent', '')
-            doc['subcategory'] = meta.get('superparent', '')
-            # Use database values if present, otherwise fall back to metadata
+            # Fall back to metadata if DB columns are empty
             if not doc.get('supplier_code'):
                 doc['supplier_code'] = meta.get('supplier_code', '')
             if not doc.get('supplier_name'):
                 doc['supplier_name'] = meta.get('supplier_name', '')
-            doc['revision'] = meta.get('revision', '')
-            doc['status'] = meta.get('status', '')
-            doc['indexed'] = True
+            if not doc.get('supergrandparent'):
+                doc['supergrandparent'] = meta.get('supergrandparent', '')
+            if not doc.get('superparent'):
+                doc['superparent'] = meta.get('superparent', '')
+            if not doc.get('revision'):
+                doc['revision'] = meta.get('revision', '')
+            if not doc.get('status'):
+                doc['status'] = meta.get('status', '')
         else:
-            # Non-indexed document from metadata
+            # Document in metadata but not yet in DB
             doc = {
                 'pdf_id': None,
                 'filename': meta.get('filename', ''),
                 'relative_path': meta.get('relative_path_unix', ''),
                 'document_description': meta.get('document_description', ''),
-                'drawing_number': meta.get('supplier_code', ''),
                 'page_count': None,
-                'is_searchable': False,
-                'ocr_processed': False,
+                'to_be_indexed': False,
+                'indexed': False,
                 'tag_count': 0,
-                'category': meta.get('supergrandparent', ''),
-                'subcategory': meta.get('superparent', ''),
                 'supplier_code': meta.get('supplier_code', ''),
                 'supplier_name': meta.get('supplier_name', ''),
+                'supergrandparent': meta.get('supergrandparent', ''),
+                'superparent': meta.get('superparent', ''),
                 'revision': meta.get('revision', ''),
                 'status': meta.get('status', ''),
-                'indexed': False
             }
         documents.append(doc)
-    
-    # Also add any indexed documents not in metadata
+
+    # Also add DB documents not in metadata
     for key, doc in indexed_docs.items():
         if key not in drawing_metadata:
-            doc['category'] = ''
-            doc['subcategory'] = ''
-            if not doc.get('supplier_code'):
-                doc['supplier_code'] = ''
-            if not doc.get('supplier_name'):
-                doc['supplier_name'] = ''
-            doc['revision'] = ''
-            doc['status'] = ''
-            doc['indexed'] = True
             documents.append(doc)
-    
+
     return jsonify({'data': documents})
 
 
@@ -837,11 +766,11 @@ def api_search_pdf(query):
     with db._get_connection() as conn:
         # Search by multiple fields
         cursor = conn.execute('''
-            SELECT pdf_id, filename, relative_path, document_description, 
-                   drawing_number, supplier_code, supplier_name, page_count,
-                   is_searchable, ocr_processed
-            FROM pdfs 
-            WHERE filename = ? 
+            SELECT pdf_id, filename, relative_path, document_description,
+                   supplier_code, supplier_name, page_count,
+                   to_be_indexed, date_indexed
+            FROM documents
+            WHERE filename = ?
                OR filename LIKE ?
                OR supplier_code = ?
                OR supplier_code LIKE ?
@@ -850,23 +779,22 @@ def api_search_pdf(query):
             LIMIT 1
         ''', (query, f'%{query}%', query, f'%{query}%', f'%{query}%', f'%{query}%'))
         row = cursor.fetchone()
-        
+
         if row:
             pdf_info = dict(row)
             pdf_id = pdf_info['pdf_id']
         elif found_meta:
-            # PDF exists in metadata but not indexed
+            # PDF exists in metadata but not yet in DB
             pdf_info = {
                 'pdf_id': None,
                 'filename': found_meta.get('filename', ''),
                 'relative_path': found_meta.get('relative_path_unix', ''),
                 'document_description': found_meta.get('document_description', ''),
-                'drawing_number': found_meta.get('supplier_code', ''),
                 'supplier_code': found_meta.get('supplier_code', ''),
                 'supplier_name': found_meta.get('supplier_name', ''),
                 'page_count': None,
-                'is_searchable': False,
-                'ocr_processed': False
+                'to_be_indexed': False,
+                'date_indexed': None,
             }
         
         if not pdf_info:
@@ -895,25 +823,32 @@ def api_search_pdf(query):
         # Get tags only if PDF is indexed
         if pdf_id:
             cursor = conn.execute('''
-                SELECT DISTINCT t.tag_name, t.tag_type, t.description, 
-                       t.room_tag, t.deck, o.page_number
-                FROM tag_occurrences o
-                JOIN tags t ON o.tag_id = t.tag_id
+                SELECT DISTINCT e.tag AS tag_name, 'equipment' AS tag_type,
+                       e.description, e.room_tag, e.deck, o.page_number
+                FROM equipment_occurrences o
+                JOIN equipment e ON o.equipment_id = e.equipment_id
                 WHERE o.pdf_id = ?
-                ORDER BY t.tag_type, t.tag_name, o.page_number
+                ORDER BY e.tag, o.page_number
             ''', (pdf_id,))
-        
+
             for tag_row in cursor.fetchall():
                 tag_data = dict(tag_row)
-                # Add compartment description
                 if tag_data.get('room_tag'):
                     room_key = str(tag_data['room_tag']).split('.')[0]
-                    tag_data['room_description'] = get_compartment_description(room_key)
-                
-                if tag_data['tag_type'] == 'cable':
-                    cables.append(tag_data)
-                else:
-                    equipment.append(tag_data)
+                    tag_data['room_description'] = db.get_compartment_description(room_key)
+                equipment.append(tag_data)
+
+            cursor = conn.execute('''
+                SELECT DISTINCT c.tag AS tag_name, 'cable' AS tag_type,
+                       c.type AS description, NULL AS room_tag, NULL AS deck, o.page_number
+                FROM cable_occurrences o
+                JOIN cables c ON o.cable_id = c.cable_id
+                WHERE o.pdf_id = ?
+                ORDER BY c.tag, o.page_number
+            ''', (pdf_id,))
+
+            for tag_row in cursor.fetchall():
+                cables.append(dict(tag_row))
         
         # Group by tag name with page numbers
         def group_tags(tags):
@@ -1036,9 +971,11 @@ def service_worker():
 @login_required
 def api_config():
     """Return client configuration."""
+    db = get_db()
+    stats = db.get_stats()
     return jsonify({
         'pdf_root_configured': bool(PDF_ROOT),
-        'has_compartments': bool(compartments),
+        'has_compartments': stats.get('compartments', 0) > 0,
         'has_metadata': bool(drawing_metadata)
     })
 
@@ -1051,7 +988,7 @@ def api_data_version():
     stats = db.get_stats()
     
     # Create a version hash based on data counts
-    version_string = f"{stats['total_cables']}_{stats['total_equipment']}_{stats['total_pdfs']}_{stats['total_occurrences']}_{len(drawing_metadata)}"
+    version_string = f"{stats['cables']}_{stats['equipment']}_{stats['documents']}_{stats['equipment_occurrences']}_{stats['cable_occurrences']}_{len(drawing_metadata)}"
     import hashlib
     version_hash = hashlib.md5(version_string.encode()).hexdigest()[:12]
     
@@ -1068,10 +1005,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equipment Explorer Web Interface')
     parser.add_argument('--port', '-p', type=int, default=5000, help='Port to run on')
     parser.add_argument('--host', '-H', default='127.0.0.1', help='Host to bind to')
-    parser.add_argument('--db', default='ship_cables.db', help='Path to database')
+    parser.add_argument('--db', default='data/equipment_explorer.db', help='Path to database')
     parser.add_argument('--pdf-root', help='Root directory for PDF files')
     parser.add_argument('--metadata', default='drawing_metadata.pkl', help='Path to metadata pickle')
-    parser.add_argument('--compartments', default='compartments.pkl', help='Path to compartments pickle')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
     args = parser.parse_args()
@@ -1081,13 +1017,11 @@ if __name__ == '__main__':
     if args.pdf_root:
         PDF_ROOT = args.pdf_root
     METADATA_PATH = args.metadata
-    COMPARTMENTS_PATH = args.compartments
-    
+
     # Reload data with new paths
     db = None
     auth_manager = None
     load_metadata()
-    load_compartments()
     
     # Initialize auth (creates default admin if needed)
     get_auth()
@@ -1098,7 +1032,6 @@ if __name__ == '__main__':
     print(f"Database: {DB_PATH}")
     print(f"PDF Root: {PDF_ROOT or '(not configured)'}")
     print(f"Metadata: {METADATA_PATH} ({len(drawing_metadata)} entries)")
-    print(f"Compartments: {COMPARTMENTS_PATH} ({len(compartments)} entries)")
     print(f"{'='*60}")
     print(f"Starting server at http://{args.host}:{args.port}")
     print(f"Default admin login: admin / admin")
