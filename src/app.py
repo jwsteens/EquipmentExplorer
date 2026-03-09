@@ -862,7 +862,7 @@ def manifest():
 
 @app.route('/favicon.ico')
 def favicon():
-    return redirect('/static/icons/icon-dark-bg.svg', code=301)
+    return send_file('static/icons/icon-dark-bg.svg', mimetype='image/svg+xml')
 
 
 @app.route('/sw.js')
