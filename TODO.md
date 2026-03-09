@@ -7,3 +7,5 @@ To be fixed on the front-end:
 - [x] Documents page should show supergrandparent and superparent separately.
 - [x] Cable list should show narrower rows.
 - [ ] Index dashboard needs a revamp.
+- [ ] Favicon not working.
+- [ ] Back button not working as expected.

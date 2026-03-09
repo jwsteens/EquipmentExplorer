@@ -3,6 +3,7 @@
 {% block title %}Dashboard - Ship Cable Database{% endblock %}
 
 {% block content %}
+<div style="max-width: 720px; margin: 0 auto;">
 <div class="page-header">
     <div class="page-title">
         <h1>Dashboard</h1>
@@ -50,8 +51,8 @@
             </svg>
         </div>
         <div class="stat-content">
-            <div class="stat-value">{{ "{:,}".format(stats.total_pdfs) }}</div>
-            <div class="stat-label">Indexed Documents</div>
+            <div class="stat-value">{{ "{:,}".format(stats.documents_indexed) }}/{{ "{:,}".format(stats.documents) }}</div>
+            <div class="stat-label">Documents indexed</div>
         </div>
     </div>
     
@@ -69,90 +70,6 @@
     </div>
 </div>
 
-<!-- Quick Search -->
-<div class="card" style="margin-bottom: var(--space-xl);">
-    <div class="card-header">
-        <h3 class="card-title">Quick Search</h3>
-    </div>
-    <div class="card-body">
-        <form action="/search" method="GET" id="quickSearchForm">
-            <div class="search-input-wrapper">
-                <span class="search-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"/>
-                        <path d="m21 21-4.35-4.35"/>
-                    </svg>
-                </span>
-                <input type="text" 
-                       name="q" 
-                       class="search-input" 
-                       placeholder="Search cables, equipment, or drawings..."
-                       autocomplete="off"
-                       id="quickSearchInput">
-                <span class="search-shortcut">
-                    Press <kbd class="kbd">/</kbd> to focus
-                </span>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Quick Stats -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-lg);">
-    <div class="card">
-        <div class="card-header">
-            <h3 class="card-title">Database Info</h3>
-        </div>
-        <div class="card-body">
-            <table style="width: 100%;">
-                <tr>
-                    <td style="padding: var(--space-sm) 0; color: var(--text-secondary);">Searchable PDFs</td>
-                    <td style="padding: var(--space-sm) 0; text-align: right; font-family: var(--font-mono);">{{ "{:,}".format(stats.searchable_pdfs) }}</td>
-                </tr>
-                <tr>
-                    <td style="padding: var(--space-sm) 0; color: var(--text-secondary);">Tags with occurrences</td>
-                    <td style="padding: var(--space-sm) 0; text-align: right; font-family: var(--font-mono);">{{ "{:,}".format(stats.tags_with_occurrences) }}</td>
-                </tr>
-                <tr>
-                    <td style="padding: var(--space-sm) 0; color: var(--text-secondary);">Cable connections</td>
-                    <td style="padding: var(--space-sm) 0; text-align: right; font-family: var(--font-mono);">{{ "{:,}".format(stats.cable_connections) }}</td>
-                </tr>
-            </table>
-        </div>
-    </div>
-    
-    <div class="card">
-        <div class="card-header">
-            <h3 class="card-title">Quick Actions</h3>
-        </div>
-        <div class="card-body">
-            <div style="display: flex; flex-direction: column; gap: var(--space-sm);">
-                <a href="/search" class="btn btn-secondary" style="justify-content: flex-start;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                        <circle cx="11" cy="11" r="8"/>
-                        <path d="m21 21-4.35-4.35"/>
-                    </svg>
-                    Advanced Search
-                </a>
-                <a href="/cables" class="btn btn-secondary" style="justify-content: flex-start;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                        <path d="M4 9h16"/>
-                        <path d="M4 15h16"/>
-                    </svg>
-                    Browse Cables
-                </a>
-                <a href="/documents" class="btn btn-secondary" style="justify-content: flex-start;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14,2 14,8 20,8"/>
-                    </svg>
-                    Browse Documents
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Recent Searches (stored in localStorage) -->
 <div class="card" style="margin-top: var(--space-xl);" id="recentSearchesCard">
     <div class="card-header">
@@ -163,24 +80,12 @@
         <p class="text-muted">No recent searches</p>
     </div>
 </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Quick search form
-    const form = document.getElementById('quickSearchForm');
-    const input = document.getElementById('quickSearchInput');
-    
-    form.addEventListener('submit', function(e) {
-        const query = input.value.trim();
-        if (query) {
-            // Add to recent searches
-            addRecentSearch(query);
-        }
-    });
-    
-    // Load recent searches
     loadRecentSearches();
 });
 
@@ -193,17 +98,18 @@ function loadRecentSearches() {
         return;
     }
     
-    const html = recent.map(item => `
-        <a href="/search?q=${encodeURIComponent(item.query)}" 
-           class="btn btn-ghost btn-sm" 
-           style="margin-right: var(--space-xs); margin-bottom: var(--space-xs);">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+    const html = `<div style="display:flex; flex-direction:column; gap:var(--space-xs);">` +
+        recent.map(item => `
+        <a href="/search?q=${encodeURIComponent(item.query)}"
+           class="btn btn-ghost btn-sm"
+           style="justify-content:flex-start;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;">
                 <polyline points="1 4 1 10 7 10"/>
                 <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
             </svg>
             ${escapeHtml(item.query)}
         </a>
-    `).join('');
+    `).join('') + `</div>`;
     
     container.innerHTML = html;
 }
