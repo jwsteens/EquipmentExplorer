@@ -3,15 +3,14 @@
 {% block title %}Help - Equipment Explorer{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <div class="page-title">
-        <h1>How to Use</h1>
-    </div>
-    <p class="page-subtitle">Quick guide to the Equipment Explorer</p>
-</div>
 
-<div class="help-container" style="max-width: 900px;">
-    
+<div class="help-container" style="max-width: 800px; margin: 0 auto;">
+
+    <div class="search-hero">
+        <h1>Help</h1>
+        <p>How to get the most out of Equipment Explorer.</p>
+    </div>
+
     <!-- Search Section -->
     <div class="card" style="margin-bottom: var(--space-lg);">
         <div class="card-header">
@@ -24,53 +23,50 @@
             </h3>
         </div>
         <div class="card-body">
-            <p style="margin-bottom: var(--space-md);">Find cables, equipment, and documents by searching for their tag numbers or filenames.</p>
-            
-            <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Search Types:</h4>
+            <p style="margin-bottom: var(--space-md);">The search page lets you find cables, equipment, and documents in one place. Start typing and autocomplete suggestions will appear after two characters.</p>
+
+            <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Filters:</h4>
             <ul style="margin-left: var(--space-lg); margin-bottom: var(--space-md); line-height: 1.8;">
-                <li><strong>All Tags</strong> - Search for cables and equipment by exact tag number or description</li>
-                <li><strong>Cables</strong> - Filter results to only show cables</li>
-                <li><strong>Equipment</strong> - Filter results to only show equipment</li>
-                <li><strong>Documents</strong> - Search for a PDF by filename, supplier or supplier code to see all tags it contains</li>
+                <li><strong>All</strong> - Searches cables, equipment, and documents simultaneously.</li>
+                <li><strong>Cables</strong> - Limits results to cable tags only.</li>
+                <li><strong>Equipment</strong> - Limits results to equipment tags only.</li>
+                <li><strong>Documents</strong> - Searches by filename, supplier name, or supplier code.</li>
             </ul>
-            
+
             <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Tips:</h4>
-            <ul style="margin-left: var(--space-lg); margin-bottom: var(--space-md); line-height: 1.8;">
-                <li>Enable <strong>Partial match</strong> to find tags containing your search term</li>
-                <li>Click on any tag in results to search for it</li>
-                <li>Use the <strong>Contents</strong> button on PDF results to see all tags in that document</li>
-				<li>Pin the cable, equipment or PDF to the sidebar to easily find it later</li>
+            <ul style="margin-left: var(--space-lg); line-height: 1.8;">
+                <li>Click through connections to quickly build an understanding of how systems are interconnected.</li>
+                <li>When viewing a tag result, view all the documents the tag appears on and filter them as needed.</li>
+                <li>When viewing a document result, view all the tags found within it and filter them as needed.</li>
+                <li>Pin any cable, equipment, or document to the sidebar.</li>
             </ul>
         </div>
     </div>
-    
+
     <!-- Cable List Section -->
     <div class="card" style="margin-bottom: var(--space-lg);">
         <div class="card-header">
             <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;color:var(--accent-cable)">
-                    <path d="M4 9h16"/>
-                    <path d="M4 15h16"/>
-                    <circle cx="8" cy="9" r="1" fill="currentColor"/>
-                    <circle cx="16" cy="15" r="1" fill="currentColor"/>
+                    <rect x="3" y="17" width="3.5" height="1.5" fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                    <rect x="17.5" y="5.5" width="3.5" height="1.5" fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path fill="none" d="M6.5 17.75h11c4.25 0 4.25-5.75 0-5.75h-11c-4.25 0-4.25-5.75 0-5.75h11"/>
                 </svg>
                 Cable List
             </h3>
         </div>
         <div class="card-body">
-            <p style="margin-bottom: var(--space-md);">Browse all cables with their connection information.</p>
-            
+            <p style="margin-bottom: var(--space-md);">A full overview of all cables with their connection endpoints, compartment locations, and deck information. Use the table search to filter by any field.</p>
+
             <ul style="margin-left: var(--space-lg); line-height: 1.8;">
-                <li>View start and destination equipment for each cable</li>
-                <li>See compartment locations and deck information</li>
-                <li>Click any cable or equipment tag to search for it</li>
-                <li>Use the search box to filter the table</li>
-                <li>Export to CSV for use in Excel</li>
-				<li>Pin the cable to the sidebar</li>
+                <li>Click any cable or equipment tag to open it in search.</li>
+                <li>Sort by any column by clicking its header.</li>
+                <li>Export the current view to CSV to print out a filtered cable list.</li>
+                <li>Pin a cable to the sidebar for quick access later.</li>
             </ul>
         </div>
     </div>
-    
+
     <!-- Documents Section -->
     <div class="card" style="margin-bottom: var(--space-lg);">
         <div class="card-header">
@@ -83,28 +79,26 @@
             </h3>
         </div>
         <div class="card-body">
-            <p style="margin-bottom: var(--space-md);">Browse all drawings and documents.</p>
-            
-            <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Status Indicators:</h4>
+            <p style="margin-bottom: var(--space-md);">Browse all drawings and technical documents. Each document shows its indexing status, supplier information, and the number of tags found inside.</p>
+
+            <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Status indicators:</h4>
             <ul style="margin-left: var(--space-lg); margin-bottom: var(--space-md); line-height: 1.8;">
-                <li><span class="badge badge-success">Indexed</span> - Document has been processed and tags can be searched</li>
-                <li><span class="badge badge-warning">OCR Done</span> - OCR processing complete</li>
-                <li><span class="badge badge-muted">Needs OCR</span> - Document needs OCR processing</li>
-                <li><span class="badge badge-muted">Not Indexed</span> - Document not yet in the index</li>
+                <li><span class="badge badge-success">Indexed</span> - Document has been processed; tags are searchable.</li>
+                <li><span class="badge badge-warning">Pending</span> - Document is queued for indexing.</li>
+                <li><span class="badge badge-muted">Not Indexed</span> - Document is not yet in the index.</li>
             </ul>
-            
+
             <h4 style="font-size: 0.95rem; margin-bottom: var(--space-sm);">Actions:</h4>
             <ul style="margin-left: var(--space-lg); line-height: 1.8;">
                 <li><strong>Open</strong> - Opens the PDF in a new tab</li>
                 <li><strong>Contents</strong> - Shows all cables and equipment found in the document</li>
-                <li><strong>Tags count</strong> - Click to see a popup with all tags in the document</li>
-				<li><strong>Pin</strong> - Pin the PDF to the sidebar</li>
+                <li><strong>Pin</strong> - Pins the document to the sidebar for quick access later</li>
             </ul>
         </div>
     </div>
-    
+
     <!-- Keyboard Shortcuts Section -->
-    <div class="card" style="margin-bottom: var(--space-lg);">
+    <div class="card">
         <div class="card-header">
             <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;color:var(--text-secondary)">
@@ -155,28 +149,6 @@
             </div>
         </div>
     </div>
-    
-    <!-- Offline Mode Section -->
-    <div class="card">
-        <div class="card-header">
-            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-sm);">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;color:var(--accent-warning)">
-                    <path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.58 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>
-                </svg>
-                Offline Mode
-            </h3>
-        </div>
-        <div class="card-body">
-            <p style="margin-bottom: var(--space-md);">The application caches data locally for offline use.</p>
-            
-            <ul style="margin-left: var(--space-lg); line-height: 1.8;">
-                <li>Cable and document lists are cached in your browser</li>
-                <li>Data automatically syncs when you're back online</li>
-                <li>Use the <strong>Refresh</strong> button to manually update cached data</li>
-                <li>The cache indicator shows when you're using cached data</li>
-            </ul>
-        </div>
-    </div>
-    
+
 </div>
 {% endblock %}
