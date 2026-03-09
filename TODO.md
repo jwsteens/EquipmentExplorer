@@ -1,0 +1,2 @@
+- [ ] Set up nginx and add instructions to README.md, add nginx.conf to repo
+- [ ] Set up use with Docker
