@@ -101,6 +101,11 @@ def add_cache_control(response):
     return response
 
 
+@app.route('/.well-known/<path:subpath>')
+def well_known(subpath):
+    abort(404)
+
+
 @app.errorhandler(Exception)
 def handle_error(error):
     """Log unhandled errors."""
