@@ -241,6 +241,15 @@ async function performSearch(query) {
             if (exactData.found) {
                 renderExactResults(exactData);
             } else {
+                // In 'all' mode, also try PDF search before falling back to partial
+                if (currentFilter === 'all') {
+                    const pdfResponse = await fetch(`/api/search/pdf/${encodeURIComponent(query)}`);
+                    const pdfData = await pdfResponse.json();
+                    if (pdfData.found) {
+                        renderPdfSearchResults(pdfData);
+                        return;  // finally block still runs
+                    }
+                }
                 const typeParam = currentFilter !== 'all' ? `?type=${currentFilter}` : '';
                 const partialResponse = await fetch(`/api/search/partial/${encodeURIComponent(query)}${typeParam}`);
                 const partialData = await partialResponse.json();
@@ -260,10 +269,10 @@ async function performSearch(query) {
                 <p class="text-muted">${escapeHtml(error.message)}</p>
             </div>
         `;
+    } finally {
+        loadingState.classList.add('hidden');
+        resultsContent.classList.remove('hidden');
     }
-    
-    loadingState.classList.add('hidden');
-    resultsContent.classList.remove('hidden');
 }
 
 function renderExactResults(data) {
@@ -355,17 +364,34 @@ function renderExactResults(data) {
             <div class="pdf-results">
                 <div class="pdf-results-header">
                     <h3 class="pdf-results-title">Found in Documents</h3>
-                    <span class="pdf-results-count">${pdfs.length} document${pdfs.length !== 1 ? 's' : ''}</span>
+                    <span class="pdf-results-count" id="pdfResultsCount">${pdfs.length} document${pdfs.length !== 1 ? 's' : ''}</span>
                 </div>
-                <div class="pdf-list">
+                <div style="margin-bottom: var(--space-md); position: relative; max-width: 320px;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--text-muted); pointer-events: none;">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                    <input type="text"
+                           id="pdfFilterInput"
+                           placeholder="Filter documents..."
+                           autocomplete="off"
+                           oninput="filterPdfCards(this.value, ${pdfs.length})"
+                           style="width: 100%; padding: 6px 10px 6px 32px; height: 32px; font-size: 0.875rem;
+                                  background: var(--bg-tertiary); border: 1px solid var(--border-color);
+                                  border-radius: var(--radius-md); color: var(--text-primary);
+                                  outline: none; box-sizing: border-box;">
+                </div>
+                <div class="pdf-list" id="pdfList">
         `;
-        
+
         pdfs.forEach(pdf => {
             html += renderPdfCard(pdf, tagInfo.tag_name);
         });
-        
+
         html += `
                 </div>
+                <div id="pdfNoResults" class="hidden" style="padding: var(--space-md); color: var(--text-muted); text-align: center; font-size: 0.875rem;">No documents match your filter</div>
             </div>
         `;
     } else {
@@ -542,8 +568,9 @@ function renderPdfCard(pdf, searchTag) {
         `;
     }
     
+    const filterText = [title, pdf.filename, pdf.supplier_code || '', pdf.supplier_name || ''].join(' ').toLowerCase();
     return `
-        <div class="pdf-card">
+        <div class="pdf-card" data-filter="${escapeHtml(filterText)}">
             <div class="pdf-card-header">
                 <div class="pdf-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -687,6 +714,11 @@ function renderPdfSearchResults(data) {
     const cables = data.cables || [];
     const equipment = data.equipment || [];
     const pdfUrl = `/pdf/${encodeURIComponent(pdf.relative_path)}`;
+    const statusBadge = pdf.to_be_indexed
+        ? '<span class="badge badge-warning">Pending</span>'
+        : pdf.date_indexed
+            ? '<span class="badge badge-success">Indexed</span>'
+            : '<span class="badge badge-muted">Not Indexed</span>';
     
     let html = `
         <div class="tag-info-card">
@@ -700,10 +732,7 @@ function renderPdfSearchResults(data) {
                 <div class="tag-info-details">
                     <h2>${escapeHtml(pdf.document_description || pdf.filename)}</h2>
                     <div style="display: flex; gap: var(--space-sm); align-items: center; flex-wrap: wrap;">
-                        <span class="mono text-muted" style="font-size: 0.9rem;">${escapeHtml(pdf.filename)}</span>
-                        ${pdf.is_searchable ? '<span class="badge badge-success">Indexed</span>' : 
-                          pdf.ocr_processed ? '<span class="badge badge-warning">OCR Done</span>' : 
-                          '<span class="badge badge-muted">Not Indexed</span>'}
+                        <span class="mono text-muted" style="font-size: 0.9rem;">${escapeHtml(pdf.filename)}</span>                        
                     </div>
                 </div>
             </div>
@@ -746,11 +775,7 @@ function renderPdfSearchResults(data) {
     html += `
             <div>
                 <div class="text-muted" style="font-size: 0.75rem; text-transform: uppercase; margin-bottom: 4px;">Status</div>
-                <div>
-                    ${pdf.is_searchable ? '<span class="badge badge-success">Indexed</span>' : 
-                      pdf.ocr_processed ? '<span class="badge badge-warning">OCR Done</span>' : 
-                      '<span class="badge badge-muted">Not Indexed</span>'}
-                </div>
+                <div>${statusBadge}</div>
             </div>
         </div>
     `;
@@ -778,43 +803,68 @@ function renderPdfSearchResults(data) {
         if (equipment.length > 0) {
             html += `
                 <div style="margin-bottom: var(--space-lg);">
-                    <h4 style="color: var(--accent-equipment); margin-bottom: var(--space-md); display: flex; align-items: center; gap: var(--space-sm);">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                            <rect x="4" y="4" width="16" height="16" rx="2"/>
-                            <circle cx="12" cy="12" r="4"/>
-                        </svg>
-                        Equipment (${equipment.length})
-                    </h4>
-                    <div class="tags-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-sm);">
+                    <div style="display: flex; align-items: center; gap: var(--space-md); margin-bottom: var(--space-md); flex-wrap: wrap;">
+                        <h4 style="color: var(--accent-equipment); margin: 0; display: flex; align-items: center; gap: var(--space-sm); white-space: nowrap;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                                <rect x="4" y="4" width="16" height="16" rx="2"/>
+                                <circle cx="12" cy="12" r="4"/>
+                            </svg>
+                            Equipment (<span id="equipmentCount">${equipment.length}</span>)
+                        </h4>
+                        <div style="position: relative;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                 style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); width: 13px; height: 13px; color: var(--text-muted); pointer-events: none;">
+                                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                            </svg>
+                            <input type="text" placeholder="Filter equipment..."
+                                   oninput="filterTagGrid('equipmentGrid', 'equipmentCount', this.value, ${equipment.length})"
+                                   style="padding: 5px 8px 5px 28px; height: 28px; font-size: 0.8rem;
+                                          background: var(--bg-tertiary); border: 1px solid var(--border-color);
+                                          border-radius: var(--radius-md); color: var(--text-primary); outline: none; width: 200px;">
+                        </div>
+                    </div>
+                    <div class="tags-grid" id="equipmentGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-sm);">
             `;
-            
+
             equipment.forEach(tag => {
                 html += renderTagItem(tag, pdfUrl);
             });
-            
+
             html += `</div></div>`;
         }
-        
+
         // Cables list
         if (cables.length > 0) {
             html += `
                 <div>
-                    <h4 style="color: var(--accent-cable); margin-bottom: var(--space-md); display: flex; align-items: center; gap: var(--space-sm);">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                            <path d="M4 9h16"/>
-                            <path d="M4 15h16"/>
-                            <circle cx="8" cy="9" r="1" fill="currentColor"/>
-                            <circle cx="16" cy="15" r="1" fill="currentColor"/>
-                        </svg>
-                        Cables (${cables.length})
-                    </h4>
-                    <div class="tags-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-sm);">
+                    <div style="display: flex; align-items: center; gap: var(--space-md); margin-bottom: var(--space-md); flex-wrap: wrap;">
+                        <h4 style="color: var(--accent-cable); margin: 0; display: flex; align-items: center; gap: var(--space-sm); white-space: nowrap;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                                <path d="M4 9h16"/><path d="M4 15h16"/>
+                                <circle cx="8" cy="9" r="1" fill="currentColor"/>
+                                <circle cx="16" cy="15" r="1" fill="currentColor"/>
+                            </svg>
+                            Cables (<span id="cablesCount">${cables.length}</span>)
+                        </h4>
+                        <div style="position: relative;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                 style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); width: 13px; height: 13px; color: var(--text-muted); pointer-events: none;">
+                                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                            </svg>
+                            <input type="text" placeholder="Filter cables..."
+                                   oninput="filterTagGrid('cablesGrid', 'cablesCount', this.value, ${cables.length})"
+                                   style="padding: 5px 8px 5px 28px; height: 28px; font-size: 0.8rem;
+                                          background: var(--bg-tertiary); border: 1px solid var(--border-color);
+                                          border-radius: var(--radius-md); color: var(--text-primary); outline: none; width: 200px;">
+                        </div>
+                    </div>
+                    <div class="tags-grid" id="cablesGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-sm);">
             `;
-            
+
             cables.forEach(tag => {
                 html += renderTagItem(tag, pdfUrl);
             });
-            
+
             html += `</div></div>`;
         }
         
@@ -864,8 +914,9 @@ function renderTagItem(tag, pdfUrl) {
         ? createCablePinButton(tag.tag_name, tag.description || '', '', '')
         : createEquipmentPinButton(tag.tag_name, tag.description || '', tag.room_tag || '');
     
+    const tagFilterText = [tag.tag_name, tag.description || '', tag.room_tag || '', tag.deck || ''].join(' ').toLowerCase();
     return `
-        <div class="tag-item" style="background: var(--bg-tertiary); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); cursor: pointer;" onclick="searchTag('${escapeHtml(tag.tag_name)}')">
+        <div class="tag-item" data-filter="${escapeHtml(tagFilterText)}" style="background: var(--bg-tertiary); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); cursor: pointer;" onclick="searchTag('${escapeHtml(tag.tag_name)}')">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-sm);">
                 <div style="flex: 1; min-width: 0;">
                     <span class="mono" style="color: var(--accent-secondary); font-weight: 500;">${escapeHtml(tag.tag_name)}</span>
@@ -880,6 +931,37 @@ function renderTagItem(tag, pdfUrl) {
             </div>
         </div>
     `;
+}
+
+function filterTagGrid(gridId, countId, query, total) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    const q = query.trim().toLowerCase();
+    let visible = 0;
+    grid.querySelectorAll('.tag-item').forEach(item => {
+        const match = !q || item.dataset.filter.includes(q);
+        item.classList.toggle('hidden', !match);
+        if (match) visible++;
+    });
+    const countEl = document.getElementById(countId);
+    if (countEl) countEl.textContent = q ? `${visible} of ${total}` : String(total);
+}
+
+function filterPdfCards(query, total) {
+    const cards = document.querySelectorAll('#pdfList .pdf-card');
+    const q = query.trim().toLowerCase();
+    let visible = 0;
+    cards.forEach(card => {
+        const match = !q || card.dataset.filter.includes(q);
+        card.classList.toggle('hidden', !match);
+        if (match) visible++;
+    });
+    const countEl = document.getElementById('pdfResultsCount');
+    if (countEl) {
+        countEl.textContent = q ? `${visible} of ${total} document${total !== 1 ? 's' : ''}` : `${total} document${total !== 1 ? 's' : ''}`;
+    }
+    const noResults = document.getElementById('pdfNoResults');
+    if (noResults) noResults.classList.toggle('hidden', visible > 0);
 }
 
 function copyPdfLink(url) {

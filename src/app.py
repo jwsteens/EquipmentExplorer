@@ -494,19 +494,44 @@ def api_autocomplete():
         } for p in pdf_matches[:15]]
     
     else:
-        # Tag search (existing behavior)
+        # Tag search (cable/equipment)
         db = get_db()
         tag_type = search_type if search_type in ['cable', 'equipment'] else None
         results = db.search_tag_partial(query, tag_type)
-        
+
         suggestions = [{
             'tag_name': r['tag_name'],
             'tag_type': r['tag_type'],
             'description': r.get('description', ''),
             'pdf_count': r['pdf_count'] or 0,
             'match_priority': r.get('match_priority', 3)
-        } for r in results[:15]]
-    
+        } for r in results[:10]]
+
+        # Also include PDF results when filter is 'all'
+        if search_type == 'all':
+            query_lower = query.lower()
+            with db._get_connection() as conn:
+                cursor = conn.execute('''
+                    SELECT filename, document_description, supplier_code, supplier_name
+                    FROM documents
+                    WHERE LOWER(filename) LIKE ?
+                       OR LOWER(supplier_code) LIKE ?
+                       OR LOWER(document_description) LIKE ?
+                       OR LOWER(supplier_name) LIKE ?
+                    ORDER BY filename
+                    LIMIT 5
+                ''', (f'%{query_lower}%', f'%{query_lower}%', f'%{query_lower}%', f'%{query_lower}%'))
+                rows = cursor.fetchall()
+
+            for row in rows:
+                suggestions.append({
+                    'tag_name': row['filename'],
+                    'tag_type': 'pdf',
+                    'description': row['document_description'] or '',
+                    'supplier_code': row['supplier_code'] or '',
+                    'supplier_name': row['supplier_name'] or '',
+                })
+
     return jsonify(suggestions)
 
 

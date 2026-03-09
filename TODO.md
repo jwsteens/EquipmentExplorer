@@ -10,3 +10,7 @@ To be fixed on the front-end:
 - [x] Favicon not working.
 - [x] Update cable icon.
 - [x] Back button not working as expected in searches.
+- [ ] Rewrite help page.
+- [x] When returning a search result, filter documents.
+- [x] Autocomplete for documents is not working when All Tags is selected, only when Documents is selected.
+- [ ] Change navbar to nav menu for mobile devices
