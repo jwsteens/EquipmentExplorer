@@ -1,5 +1,5 @@
 To be fixed on the front-end:
-- [ ] When viewing equipment on search page, only cables from are shown.
+- [x] When viewing equipment on search page, only cables from are shown.
 - [ ] Partial match results return a huge ass symbol.
 - [ ] Sessions are not saved when app is restarted.
 - [ ] Admin should be able to end user sessions.

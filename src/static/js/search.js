@@ -447,45 +447,40 @@ function renderConnectionDiagram(conn) {
     `;
 }
 
+function renderCableItem(cable, equipmentTag) {
+    // searched equip is the destination → other end is start → [other_equip] → [cable]
+    // searched equip is the source      → other end is dest  → [cable] → [other_equip]
+    const searchedIsDest = cable.dest_equipment_tag === equipmentTag;
+    const otherEquipment = searchedIsDest ? cable.start_equipment_tag : cable.dest_equipment_tag;
+    const otherDesc = searchedIsDest ? cable.start_equipment_description : cable.dest_equipment_description;
+
+    const pinBtn = createCablePinButton(cable.cable_tag, '', cable.start_equipment_tag || '', cable.dest_equipment_tag || '');
+    const arrow = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0;color:var(--text-muted)"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12,5 19,12 12,19"/></svg>`;
+    const cableTag = `<span class="cable-item-tag" onclick="searchTag('${escapeHtml(cable.cable_tag)}')">${escapeHtml(cable.cable_tag)}</span>`;
+    const otherEquip = `<span class="cable-item-equipment"><a href="#" onclick="event.preventDefault(); searchTag('${escapeHtml(otherEquipment)}')" style="color: var(--accent-equipment)">${escapeHtml(otherEquipment)}</a>${otherDesc ? ` <span class="text-muted">- ${escapeHtml(otherDesc)}</span>` : ''}</span>`;
+
+    const inner = searchedIsDest ? `${otherEquip}${arrow}${cableTag}` : `${cableTag}${arrow}${otherEquip}`;
+    const style = searchedIsDest ? ' style="justify-content:flex-end"' : '';
+    const content = searchedIsDest ? `${inner}${pinBtn}` : `${pinBtn}${inner}`;
+    return `<div class="cable-item"${style}>${content}</div>`;
+}
+
 function renderConnectedCables(cables, equipmentTag) {
     const displayCount = 15;
     const showAll = cables.length <= displayCount;
-    
+
     let html = `
         <div class="connected-cables">
             <div class="connected-cables-title">Connected Cables (${cables.length})</div>
             <div class="cables-list" id="cablesList">
     `;
-    
+
     cables.slice(0, showAll ? cables.length : displayCount).forEach(cable => {
-        const isFrom = cable.connection_direction === 'from';
-        const otherEquipment = isFrom ? cable.dest_equipment_tag : cable.start_equipment_tag;
-        const otherDesc = isFrom ? cable.dest_equipment_description : cable.start_equipment_description;
-        
-        // Add pin button for each cable in the list
-        const cablePinBtn = createCablePinButton(cable.cable_tag, '', cable.start_equipment_tag || '', cable.dest_equipment_tag || '');
-        
-        html += `
-            <div class="cable-item">
-                <span class="cable-item-tag" onclick="searchTag('${escapeHtml(cable.cable_tag)}')">${escapeHtml(cable.cable_tag)}</span>
-                <span class="cable-item-direction ${isFrom ? 'from' : 'to'}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
-                        <line x1="5" y1="12" x2="19" y2="12"/>
-                        <polyline points="12,5 19,12 12,19"/>
-                    </svg>
-                    ${isFrom ? 'to' : 'from'}
-                </span>
-                <span class="cable-item-equipment">
-                    <a href="#" onclick="event.preventDefault(); searchTag('${escapeHtml(otherEquipment)}')" style="color: var(--accent-equipment)">${escapeHtml(otherEquipment)}</a>
-                    ${otherDesc ? `<span class="text-muted"> - ${escapeHtml(otherDesc)}</span>` : ''}
-                </span>
-                ${cablePinBtn}
-            </div>
-        `;
+        html += renderCableItem(cable, equipmentTag);
     });
-    
+
     html += '</div>';
-    
+
     if (!showAll) {
         html += `
             <button class="btn btn-ghost btn-sm mt-md" onclick="showAllCables()">
@@ -493,49 +488,22 @@ function renderConnectedCables(cables, equipmentTag) {
             </button>
         `;
     }
-    
+
     html += '</div>';
-    
+
     // Store full list for "show all"
     window._allConnectedCables = cables;
     window._equipmentTag = equipmentTag;
-    
+
     return html;
 }
 
 function showAllCables() {
     const cables = window._allConnectedCables;
     if (!cables) return;
-    
+
     const list = document.getElementById('cablesList');
-    list.innerHTML = '';
-    
-    cables.forEach(cable => {
-        const isFrom = cable.connection_direction === 'from';
-        const otherEquipment = isFrom ? cable.dest_equipment_tag : cable.start_equipment_tag;
-        const otherDesc = isFrom ? cable.dest_equipment_description : cable.start_equipment_description;
-        
-        // Add pin button for each cable in the list
-        const cablePinBtn = createCablePinButton(cable.cable_tag, '', cable.start_equipment_tag || '', cable.dest_equipment_tag || '');
-        
-        list.innerHTML += `
-            <div class="cable-item">
-                <span class="cable-item-tag" onclick="searchTag('${escapeHtml(cable.cable_tag)}')">${escapeHtml(cable.cable_tag)}</span>
-                <span class="cable-item-direction ${isFrom ? 'from' : 'to'}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
-                        <line x1="5" y1="12" x2="19" y2="12"/>
-                        <polyline points="12,5 19,12 12,19"/>
-                    </svg>
-                    ${isFrom ? 'to' : 'from'}
-                </span>
-                <span class="cable-item-equipment">
-                    <a href="#" onclick="event.preventDefault(); searchTag('${escapeHtml(otherEquipment)}')" style="color: var(--accent-equipment)">${escapeHtml(otherEquipment)}</a>
-                    ${otherDesc ? `<span class="text-muted"> - ${escapeHtml(otherDesc)}</span>` : ''}
-                </span>
-                ${cablePinBtn}
-            </div>
-        `;
-    });
+    list.innerHTML = cables.map(c => renderCableItem(c, window._equipmentTag)).join('');
 }
 
 function renderPdfCard(pdf, searchTag) {
