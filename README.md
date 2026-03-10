@@ -33,6 +33,7 @@ The app is now running at `http://localhost:5000`.
 ## Data Setup
 
 After installation, import your data and index documents.
+Put cable list, compartment list and document metadata in `data/setup/`. Put documents in `documents/`.
 
 1. **Open a terminal in the container**
    ```bash
