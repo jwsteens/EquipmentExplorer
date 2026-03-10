@@ -15,29 +15,33 @@ A web app that allows technicians to search and navigate ship equipment document
 
 ## Installation
 
-Install Python, pip and git.
+Install [Docker](https://docs.docker.com/get-started/get-docker/). [Git](https://git-scm.com/install/) can be used to clone the repository, or it can be cloned manually.
 
-1. **Clone git**
+1. **Clone the repository**
    ```bash
    git clone https://github.com/jwsteens/EquipmentExplorer
-   ```
-
-2. **Create Python and activate virtual environment**
-   ```bash
-   python -m venv EquipmentExplorer/
-   
    cd EquipmentExplorer/
-   source bin/activate
    ```
 
-3. **Install dependencies**
+2. **Build the image and start the container**
    ```bash
-   pip install -r src/requirements.txt
+   docker compose up -d
    ```
 
-4. **Import data** using the Command Line Interface tool
+The app is now running at `http://localhost:5000`.
+
+## Data Setup
+
+After installation, import your data and index documents.
+
+1. **Open a terminal in the container**
    ```bash
-   python src/manage.py setup
+   docker compose exec equipment-explorer bash
+   ```
+
+2. **Import data** using the interactive CLI tool
+   ```bash
+   python manage.py setup
    ```
    This guides you through:
    - Importing equipment & cables from Excel;
@@ -45,20 +49,42 @@ Install Python, pip and git.
    - Scanning and registering PDF documents;
    - Importing document metadata.
 
-5. **Start web app**
+3. **First login** — go to `http://localhost:5000` and log in with the default credentials (`admin` / `admin`). Change the admin password, then go to the Documents page and select which documents to index.
+
+4. **Index PDFs**
    ```bash
-   cd src
-   waitress-serve --host=127.0.0.1 --port=8080 app:app
+   python manage.py index-documents
    ```
 
-   1. Log in with default credentials (admin / admin);
-   2. Change password for admin;
-   3. Go to Documents page and select documents to be indexed.
+## Network Access
 
-6. **Index PDFs**
+Use [nginx](https://nginx.org/) to route traffic from port 80 to the app port and configure the firewall to allow this traffic.
+
+If you do not have nginx installed on your system yet, follow these steps to get it going for this project:
+1. Install **nginx**.
    ```bash
-   python src/manage.py index-documents
+   sudo apt update
+   sudo apt install nginx
    ```
+2. Modify `/etc/nginx/nginx.conf`
+   In the `http` block, add the following block:
+   ```
+   server {
+      listen 80;
+      server_name _;
+
+      location / {
+         proxy_pass http://127.0.0.1:5000;
+         proxy_set_header Host $host;
+         proxy_set_header X-Real-IP $remote_addr;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+         proxy_set_header X-Forwarded-Proto $scheme;
+      }
+   }
+   ```
+
+   Or simply copy `nginx.conf` from this repo into `/etc/nginx/`.
+
 
 ## File Structure
 
@@ -75,6 +101,7 @@ EquipmentExplorer/
 │   ├── schema.sql              # Database schema
 │   ├── requirements.txt        # Python dependencies
 │   ├── setup/                  # Data import scripts
+│   │   ├── db.py
 │   │   ├── import_equipment_and_cables.py
 │   │   ├── import_compartments.py
 │   │   ├── import_documents.py
@@ -92,13 +119,23 @@ EquipmentExplorer/
 │       ├── search.html         # Search interface
 │       ├── cables.html         # Cable list
 │       ├── documents.html      # Document list
+│       ├── error.html          # Error page
 │       ├── help.html           # Help page
 │       ├── login.html          # Login page
 │       ├── profile.html        # User profile / password change
 │       └── admin/              # Admin interface templates
+│           ├── access_logs.html
+│           ├── dashboard.html
+│           ├── error_logs.html
+│           ├── user_form.html
+│           └── users.html
 ├── data/
-│   └── equipment_explorer.db   # SQLite database
-├── sample_data/                # Example data files
+│   ├── equipment_explorer.db   # SQLite database
+│   └── setup/                  # Source data files (xlsx)
+├── documents/                  # PDF documents (vessel-specific)
+├── Dockerfile
+├── docker-compose.yml
+├── nginx.conf
 └── .env                        # Environment configuration
 ```
 
@@ -125,11 +162,15 @@ EquipmentExplorer/
 | `GET /api/pdf/<id>/tags` | Tags found in a PDF |
 | `GET /pdf/<path>` | Serve PDF file |
 
-## Network Access
-
-Use [nginx](https://nginx.org/) to route traffic from port 80 to the app port and configure the firewall to allow this traffic.
-
 ## Notes
 
-- The PDF viewer supports tag highlighting via `#search=TAG` — works in both Firefox and Chrome/Chromium with [pdf.js viewer](https://chromewebstore.google.com/detail/pdf-viewer/oemmndcbldboiebfnladdacbdfmadadm) extension.
-- Sessions persist across app restarts and expire after 24 hours
+- The PDF viewer supports tag highlighting via `#search=TAG` — works in both Firefox, or Chromium browsers (Chrome, Brave, Edge, etc.) with the [pdf.js viewer](https://chromewebstore.google.com/detail/pdf-viewer/oemmndcbldboiebfnladdacbdfmadadm) extension installed.
+- Sessions persist across app restarts and expire after 24 hours.
+
+## Future features
+These features may be implemented in the future:
+- IO tag connections.
+- HTTPS support.
+- Connection graph from pinned equipment and cables.
+- Tracking of updated cable list and documents and automatic re-indexing.
+- Quick import using JSON profiles.
