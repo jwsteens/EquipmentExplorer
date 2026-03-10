@@ -1,0 +1,20 @@
+x-base: &base
+  
+
+services:
+  equipment-explorer:
+    build: .
+    volumes:
+      # Database and setup files
+      - ./data:/data
+      # Documentation folder. Change this to your actual documents folder.
+      - ./documents:/documents:ro
+      # .env file for environment variables
+      - ./.env:/app/.env
+    container_name: equipment-explorer
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - SECRET_KEY
+    command: "gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 app:app"
