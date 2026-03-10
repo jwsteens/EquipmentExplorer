@@ -11,6 +11,7 @@ WORKDIR /app
 # Install Python dependencies
 COPY src/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN touch /app/.env
 
 # Copy application code
 COPY . .
