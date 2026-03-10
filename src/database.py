@@ -13,7 +13,7 @@ from contextlib import contextmanager
 class ShipCableDB:
     """Database manager for the Ship Cable PDF Indexing System."""
 
-    def __init__(self, db_path: str = "data/equipment_explorer.db"):
+    def __init__(self, db_path: str = "/data/equipment_explorer.db"):
         self.db_path = db_path
         self._init_db()
 
@@ -520,12 +520,18 @@ class ShipCableDB:
             return stats
 
 
-def init_database(db_path: str = "data/equipment_explorer.db") -> ShipCableDB:
+def init_database(db_path: str = "/data/equipment_explorer.db") -> ShipCableDB:
     """Initialize and return a database instance."""
     return ShipCableDB(db_path)
 
 
 if __name__ == "__main__":
-    db = ShipCableDB("data/equipment_explorer.db")
+    from pathlib import Path as _Path
+    try:
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_Path(__file__).resolve().parent.parent / ".env")
+    except ImportError:
+        pass
+    db = ShipCableDB(os.environ.get('DB_PATH', '/data/equipment_explorer.db'))
     print("Database initialized successfully.")
     print("Stats:", db.get_stats())

@@ -19,7 +19,7 @@ from setup.import_compartments import import_compartments
 from setup.import_documents import import_documents
 from setup.import_metadata import import_metadata
 
-DB_PATH = _abs(os.getenv("DB_PATH", "data/equipment_explorer.db"))
+DB_PATH = _abs(os.getenv("DB_PATH", "/data/equipment_explorer.db"))
 DOCUMENTS_PATH = _abs(os.getenv("DOCUMENTS_PATH", ""))
 
 _SEP = "=" * 60

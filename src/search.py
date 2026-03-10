@@ -535,7 +535,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Ship Cable Database - Search Interface")
     parser.add_argument('tag', nargs='?', help='Tag to search for (omit for interactive mode)')
-    parser.add_argument('--db', default='ship_cables.db', help='Path to database')
+    parser.add_argument('--db', default=None, help='Path to database')
     parser.add_argument('--root', '-r', help='PDF root directory for clickable URLs (overrides .env)')
     parser.add_argument('--env', help='Path to .env file')
     
@@ -547,10 +547,8 @@ def main():
     # PDF root priority: command line > .env > None
     pdf_root = args.root or env_vars.get('PDF_ROOT')
     
-    # Database path can also come from .env
-    db_path = args.db
-    if db_path == 'ship_cables.db' and 'DB_PATH' in env_vars:
-        db_path = env_vars['DB_PATH']
+    # Database path: CLI arg > .env > default
+    db_path = args.db or env_vars.get('DB_PATH', '/data/equipment_explorer.db')
     
     # Check for database
     if not os.path.exists(db_path):

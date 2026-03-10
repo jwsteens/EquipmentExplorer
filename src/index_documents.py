@@ -23,7 +23,10 @@ from datetime import datetime
 from typing import Set, List, Tuple, Optional, Dict
 from dataclasses import dataclass, field, asdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dotenv import load_dotenv
 from database import ShipCableDB
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 # =============================================================================
@@ -624,8 +627,8 @@ Pause/Resume:
 
     parser.add_argument('--pdf-root', '-r', type=str, required=True,
                         help='Root directory containing the PDF files')
-    parser.add_argument('--db', type=str, default='data/equipment_explorer.db',
-                        help='Path to SQLite database (default: data/equipment_explorer.db)')
+    parser.add_argument('--db', type=str, default=os.environ.get('DB_PATH', '/data/equipment_explorer.db'),
+                        help='Path to SQLite database (default: $DB_PATH or /data/equipment_explorer.db)')
     parser.add_argument('--workers', '-w', type=int, default=None,
                         help=f'Number of worker processes (default: {multiprocessing.cpu_count()} = all CPUs)')
     parser.add_argument('--limit', '-l', type=int,

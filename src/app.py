@@ -34,7 +34,7 @@ app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
 # Configuration — always absolute so send_file and ShipCableDB work regardless of CWD
-DB_PATH = _abs(os.environ.get('DB_PATH', 'data/equipment_explorer.db'))
+DB_PATH = _abs(os.environ.get('DB_PATH', '/data/equipment_explorer.db'))
 PDF_ROOT = _abs(os.environ.get('DOCUMENTS_PATH', 'data/documents'))
 # Initialize database and auth
 db = None
@@ -949,7 +949,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equipment Explorer Web Interface')
     parser.add_argument('--port', '-p', type=int, default=5000, help='Port to run on')
     parser.add_argument('--host', '-H', default='127.0.0.1', help='Host to bind to')
-    parser.add_argument('--db', default='data/equipment_explorer.db', help='Path to database')
+    parser.add_argument('--db', default=os.environ.get('DB_PATH', '/data/equipment_explorer.db'), help='Path to database')
     parser.add_argument('--pdf-root', help='Root directory for PDF files')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
