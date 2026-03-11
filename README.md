@@ -172,7 +172,8 @@ EquipmentExplorer/
 
 ## Future features
 These features may be implemented in the future:
-- IO tag connections.
+- IO list and tag connections.
+- Pipe valves, fittings and instrumentation list.
 - HTTPS support.
 - Connection graph from pinned equipment and cables.
 - Tracking of updated cable list and documents and automatic re-indexing.
