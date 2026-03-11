@@ -1,6 +1,8 @@
 # EquipmentExplorer
 
-A web app that allows technicians to search and navigate ship equipment documentation. Search for cable and equipment tags and instantly find which PDF drawings they appear in.
+A locally hosted web app that allows technicians to search and navigate ship equipment documentation. Search for cable and equipment tags and instantly find which PDF drawings they appear in.
+## Demo
+[![Equipment Explorer Demo](https://img.youtube.com/vi/N2d_Y513_Pw/0.jpg)](https://youtu.be/N2d_Y513_Pw)
 
 ## Features
 
